@@ -17,11 +17,17 @@
 #include <ESP8266HTTPClient.h>
 #endif
 
-rgb_lcd lcd;
+class rgb_lcd_plus : public rgb_lcd {
+public:
+  void setColor(long color) {
+    setRGB(
+      (color & 0xff0000) >> 16,
+      (color & 0x00ff00) >> 8,
+      (color & 0x0000ff));
+  }
+};
 
-const int colorR = 255;
-const int colorG = 255;
-const int colorB = 0;
+rgb_lcd_plus lcd;
 
 enum {
   COLOR_RED = 0xff0000,
@@ -30,27 +36,17 @@ enum {
   COLOR_BLUE = 0x0000ff
 };
 
-long color = COLOR_YELLOW;
-
-void lcdSetColor(rgb_lcd lcd, long color)
-{
-  lcd.setRGB(
-    (color & 0xff0000) >> 16,
-    (color & 0x00ff00) >> 8,
-    (color & 0x0000ff));
-}
-
 void setup()
 {
   lcd.begin(16, 2); /* 16 cols, 2 rows */
 
   lcd.clear();
-  lcdSetColor(lcd, COLOR_YELLOW);
+  lcd.setColor(COLOR_YELLOW);
   lcd.setCursor(0, 0);
-  lcd.print("Initiializing...");
+  lcd.print("Initializing...");
 
 #ifdef HAVE_ESP8266
-  WiFi.begin(ssid, password);
+  WiFi.begin(wifi_ssid, wifi_password);
   while (WiFi.status() != WL_CONNECTED) {
      delay(1000);
   }
@@ -92,25 +88,27 @@ void loop()
       String payload = http.getString();
       int val = atoi(payload.c_str());
 
+      long color = watt2color(val);
+
+      lcd.setColor(color);
       lcd.clear();
-      lcdSetColor(lcd, color);
       lcd.setCursor(0, 0);
       lcd.print("Instant. power");
       lcd.setCursor(0, 1);
-      color = watt2color(val);
       lcd.print(String(val) + " W " + String(color, HEX) + " ");
     } else {
+      lcd.setColor(COLOR_YELLOW);
       lcd.clear();
-      lcdSetColor(lcd, COLOR_YELLOW);
       lcd.setCursor(0, 0);
       lcd.print("HTTP Error ");
+      lcd.print(httpCode);
     }
 
     http.end();
 
   } else {
+    lcd.setColor(COLOR_YELLOW);
     lcd.clear();
-    lcdSetColor(lcd, COLOR_YELLOW);
     lcd.setCursor(0, 0);
     lcd.print("Wifi Error ");
   }
