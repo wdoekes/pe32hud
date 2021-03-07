@@ -1,0 +1,4 @@
+*.o
+
+/config.h
+/pe32hud.test
