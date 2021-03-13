@@ -7,6 +7,9 @@
 #include <cstdlib>
 #include <cstring>
 
+#include "Serial.h"
+#include "WString.h"
+
 #define F(x) x
 
 const u_int8_t A0 = 0;

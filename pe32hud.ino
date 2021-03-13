@@ -1,3 +1,4 @@
+// vim: set ts=8 sw=2 sts=2 et ai:
 #include "config.h"
 
 #include <Arduino.h>
@@ -38,6 +39,8 @@ enum {
 
 void setup()
 {
+  Serial.begin(115200);
+
   lcd.begin(16, 2); /* 16 cols, 2 rows */
 
   lcd.clear();
