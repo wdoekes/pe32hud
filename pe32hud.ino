@@ -1,6 +1,11 @@
 // vim: set ts=8 sw=2 sts=2 et ai:
 #include "config.h"
 
+// TODO:
+// - monitor ping to GW only (for wifi-health only)
+// - the rest is fetched from remote
+// - rename remote /watt/ to /hud/ or something
+
 #include <Arduino.h>
 #include <rgb_lcd.h>
 
@@ -18,7 +23,7 @@
 /* nothing yet */
 #endif
 
-#ifdef HAVE_ESP8266PING
+#ifdef OPTIONAL_PINGMON
 # include "PingMon.h"
 #endif
 
@@ -34,7 +39,7 @@ public:
 
 rgb_lcd_plus lcd;
 
-#ifdef HAVE_ESP8266PING
+#ifdef OPTIONAL_PINGMON
 PingMon pingMon;
 #endif
 
@@ -99,6 +104,8 @@ String whatsMyIntGateway() {
 }
 
 static bool hudUpdate;
+static String message0;
+static String message1;
 static long bgColor;
 static String wattMessage;
 static int wattUpdate;
@@ -132,7 +139,7 @@ void setup()
   worstPingMs = 0;
   worstPingHost = "no.host";
 
-#ifdef HAVE_ESP8266PING
+#ifdef OPTIONAL_PINGMON
   pingMon.addTarget("dns.cldfl", "1.1.1.1");
   pingMon.addTarget("dns.ggle", "8.8.8.8");
   pingMon.addTarget("myip.ext", whatsMyIp);
@@ -177,10 +184,21 @@ static void fetchWatt()
     String payload = http.getString();
     int watt = atoi(payload.c_str());
     bgColor = watt2color(watt);
+    int lf = payload.indexOf('\n');
+    if (lf >= 0) {
+      message0 = payload.substring(lf + 1);
+      lf = message0.indexOf('\n');
+      if (lf >= 0) {
+        message1 = message0.substring(lf + 1);
+        message0.remove(lf);
+      }
+    }
     wattMessage = String(watt) + " W";
   } else {
     bgColor = COLOR_YELLOW;
     wattMessage = String("HTTP/") + httpCode;
+    message0 = wattMessage;
+    message1 = "(error)";
   }
   http.end();
 #endif
@@ -190,6 +208,11 @@ static void updateHud()
 {
   lcd.setColor(bgColor);
   lcd.clear();
+  lcd.setCursor(0, 0);
+  lcd.print(message0.c_str());
+  lcd.setCursor(0, 1);
+  lcd.print(message1.c_str());
+#if 0
   if (worstPingHost) {
     lcd.setCursor(0, 0);
     lcd.print(worstPingMs);
@@ -202,11 +225,14 @@ static void updateHud()
   }
   lcd.setCursor(0, 1);
   lcd.print(wattMessage.c_str());
+#endif
 }
 
 void loop()
 {
+#ifdef OPTIONAL_PINGMON
   pingMon.update();
+#endif
 
   if ((millis() - wattUpdate) >= 15000) {
     fetchWatt();
@@ -214,6 +240,7 @@ void loop()
     hudUpdate = true;
   }
 
+#ifdef OPTIONAL_PINGMON
   // Get worst ping/loss
   {
     float pingLoss = -1;
@@ -238,6 +265,7 @@ void loop()
       hudUpdate = true;
     }
   }
+#endif //OPTIONAL_PINGMON
 
   if (hudUpdate) {
     updateHud();

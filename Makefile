@@ -28,7 +28,7 @@ HEADERS = PingMon.h config.h bogo/Arduino.h bogo/Print.h bogo/WString.h bogo/xto
 
 # --- Test mode ---
 CXX = g++
-CPPFLAGS = -DTEST_BUILD -g -I./bogo -I../../libraries/Grove_-_LCD_RGB_Backlight
+CPPFLAGS = -DTEST_BUILD -DOPTIONAL_PINGMON -g -I./bogo -I../../libraries/Grove_-_LCD_RGB_Backlight
 CXXFLAGS = -Wall -Os
 
 test: ./pe32hud.test
