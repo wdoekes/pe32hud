@@ -2,8 +2,8 @@
 # to the more common .cpp) because g++ and make will correctly guess
 # their type, while the Arduino IDE does not open the .cpp file as well
 # (it already has this file open as the ino file).
-OBJECTS = pe32hud.o PingMon.o bogo/Arduino.o bogo/WString.o bogo/rgb_lcd.o
-HEADERS = PingMon.h config.h bogo/Arduino.h bogo/Print.h bogo/WString.h bogo/xtoa.h
+OBJECTS = pe32hud.o bogo/Arduino.o bogo/WString.o bogo/rgb_lcd.o
+HEADERS = config.h bogo/Arduino.h bogo/Print.h bogo/WString.h bogo/xtoa.h
 
 # --- Arduino Uno AVR (8-bit RISC, by Atmel) ---
 # /snap/arduino/current/hardware/arduino/avr/boards.txt:
