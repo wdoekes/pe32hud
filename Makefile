@@ -2,8 +2,10 @@
 # to the more common .cpp) because g++ and make will correctly guess
 # their type, while the Arduino IDE does not open the .cpp file as well
 # (it already has this file open as the ino file).
-OBJECTS = pe32hud.o bogo/Arduino.o bogo/WString.o bogo/rgb_lcd.o
-HEADERS = config.h bogo/Arduino.h bogo/Print.h bogo/WString.h bogo/xtoa.h
+HEADERS = $(wildcard *.h bogoduino/*.h)
+OBJECTS = pe32hud.o bogo_rbg_lcd.o \
+	  $(filter-out bogoduino/bogoduino.o, \
+	    $(addsuffix .o, $(basename $(wildcard bogoduino/*.cpp))))
 
 # --- Arduino Uno AVR (8-bit RISC, by Atmel) ---
 # /snap/arduino/current/hardware/arduino/avr/boards.txt:
@@ -28,8 +30,12 @@ HEADERS = config.h bogo/Arduino.h bogo/Print.h bogo/WString.h bogo/xtoa.h
 
 # --- Test mode ---
 CXX = g++
-CPPFLAGS = -DTEST_BUILD -DOPTIONAL_PINGMON -g -I./bogo -I../../libraries/Grove_-_LCD_RGB_Backlight
-CXXFLAGS = -Wall -Os
+CPPFLAGS = -DTEST_BUILD -g -I./bogoduino -I../../libraries/Grove_-_LCD_RGB_Backlight
+CXXFLAGS = -Wall -Os -fdata-sections -ffunction-sections
+LDFLAGS = -Wl,--gc-sections # -s(trip)
+ifeq ($(DEBUG),)
+	LDFLAGS += -Wl,-s # strip
+endif
 
 test: ./pe32hud.test
 	./pe32hud.test
