@@ -1,27 +1,39 @@
-// vim: set ts=8 sw=2 sts=2 et ai:
-#include "config.h"
+/**
+ * pe32hud // LCD screen, displaying current status
+ *
+ * Components:
+ * - ESP8266 (NodeMCU, with Wifi and this HTTP support).
+ * - attach PIN_LCD_SCL<->SCL, PIN_LCD_SDA<->SDA, Vin<->VCC, GND<->GND
+ *   (using Vin to get 5V directly from USB instead of 3V3 from the board);
+ * - attach Somfy remote; XXX FIXME.
+ *
+ * Building/dependencies:
+ * - Arduino IDE
+ * - (for ESP8266) board: package_esp8266com_index.json
+ *
+ * Configuration:
+ * - Connect the Grove-LCD RGB Backlight 4 pins according to specs.
+ * - Connect the Somfy soldered remote; XXX FIXME;
+ * - Copy arduino_secrets.h.example to arduino_secrets.h and fill in your
+ *   Wifi credentials and HUD URL configuration.
+ */
+#include "pe32hud.h"
 
-// TODO:
-// - monitor ping to GW only (for wifi-health only)
-// - the rest is fetched from remote
-// - rename remote /watt/ to /hud/ or something
-
-#include <Arduino.h>
+#ifdef HAVE_ESP8266WIRE
+#include <Wire.h>
+#endif
 #include <rgb_lcd.h>
 
-/* Include files specific to the platform (ESP8266, Arduino or TEST) */
-#if defined(ARDUINO_ARCH_ESP8266)
-# define HAVE_ESP8266HTTPCLIENT
-//# define HAVE_ESP8266PING
-# define HAVE_ESP8266WIFI
-# include <ESP8266WiFi.h>
-# include <ESP8266HTTPClient.h>
-#elif defined(ARDUINO_ARCH_AVR)
-/* nothing yet */
-#elif defined(TEST_BUILD)
-//# define HAVE_ESP8266PING
-/* nothing yet */
-#endif
+// The default pins are defined in variants/nodemcu/pins_arduino.h as
+// SDA=4 and SCL=5. [...] You can also choose the pinds yourself using
+// the I2C constructor Wire.begin(int sda, int scl);
+// D1..D7 are all good, D0 is not.
+// See: https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
+static constexpr int PIN_LCD_SCL = 5;  // D1 / GPIO5
+static constexpr int PIN_LCD_SDA = 4;  // D2 / GPIO4
+
+static constexpr int LCD_ROWS = 2;
+static constexpr int LCD_COLS = 16;
 
 class rgb_lcd_plus : public rgb_lcd {
 public:
@@ -35,23 +47,16 @@ public:
 
 rgb_lcd_plus lcd;
 
+#ifdef HAVE_ESP8266WIFI
+WiFiClient wifiClient;
+#endif
+
 enum {
   COLOR_RED = 0xff0000,
   COLOR_YELLOW = 0xffff00,
   COLOR_GREEN = 0x00ff00,
   COLOR_BLUE = 0x0000ff
 };
-
-/**
- * HACKS: assume there's a WiFi object floating around.
- */
-String whatsMyIntGateway() {
-#ifdef HAVE_ESP8266WIFI
-    return WiFi.gatewayIP().toString();
-#else
-    return "192.168.1.1";
-#endif
-}
 
 static bool hudUpdate;
 static String message0;
@@ -60,11 +65,45 @@ static long bgColor;
 static String wattMessage;
 static int wattUpdate;
 
+static void parseHudData(String hudData)
+{
+  int start = 0;
+  bool done = false;
+
+  bgColor = -1L;
+  message0 = "";
+  message1 = "";
+
+  while (!done) {
+    String line;
+    int lf = hudData.indexOf('\n', start);
+    if (lf < 0) {
+      line = hudData.substring(start);
+      done = true;
+    } else {
+      line = hudData.substring(start, lf);
+      start = lf + 1;
+    }
+
+    if (line.startsWith("color:#")) {
+      bgColor = strtol(line.c_str() + 7, NULL, 16);
+    } else if (line.startsWith("line0:")) {
+      message0 = line.substring(6, 6 + LCD_COLS);
+    } else if (line.startsWith("line1:")) {
+      message1 = line.substring(6, 6 + LCD_COLS);
+    }
+  }
+}
+
 void setup()
 {
   Serial.begin(115200);
 
-  lcd.begin(16, 2); /* 16 cols, 2 rows */
+#ifdef HAVE_ESP8266WIRE
+  Wire.begin(PIN_LCD_SDA, PIN_LCD_SCL);
+#endif
+
+  lcd.begin(LCD_COLS, LCD_ROWS); /* 16 cols, 2 rows */
 
   lcd.clear();
   lcd.setColor(COLOR_YELLOW);
@@ -72,7 +111,7 @@ void setup()
   lcd.print("Initializing...");
 
 #ifdef HAVE_ESP8266WIFI
-  WiFi.begin(wifi_ssid, wifi_password);
+  WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) {
      delay(1000);
   }
@@ -84,27 +123,7 @@ void setup()
   wattMessage = String("ENOHTTP");
 }
 
-long watt2color(int watt) {
-  if (watt <= -1024) {
-    return COLOR_GREEN;
-  } else if (watt <= -512) {
-    long val = (-watt / 2) - 256;
-    return 0x00ff00 + (0xff - val);
-  } else if (watt < 0) {
-    long val = (-watt / 2);
-    return 0x0000ff + (val << 8);
-  } else if (watt < 512) {
-    long val = (watt / 2);
-    return 0x0000ff + (val << 16);
-  } else if (watt < 1024) {
-    long val = (watt / 2) - 256;
-    return 0xff00ff - val;
-  } else {
-    return COLOR_RED;
-  }
-}
-
-static void fetchWatt()
+static void fetchHud()
 {
 #ifdef HAVE_ESP8266WIFI
   if (WiFi.status() != WL_CONNECTED) {
@@ -113,22 +132,12 @@ static void fetchWatt()
 #endif
 #ifdef HAVE_ESP8266HTTPCLIENT
   HTTPClient http;
-  http.begin(watt_url);
+  http.begin(wifiClient, SECRET_HUD_URL);
   int httpCode = http.GET();
   if (httpCode >= 200 && httpCode < 300) {
-    String payload = http.getString();
-    int watt = atoi(payload.c_str());
-    bgColor = watt2color(watt);
-    int lf = payload.indexOf('\n');
-    if (lf >= 0) {
-      message0 = payload.substring(lf + 1);
-      lf = message0.indexOf('\n');
-      if (lf >= 0) {
-        message1 = message0.substring(lf + 1);
-        message0.remove(lf);
-      }
-    }
-    wattMessage = String(watt) + " W";
+    // Fetch data and truncate just in case.
+    String payload = http.getString().substring(0, 2048);
+    parseHudData(payload);
   } else {
     bgColor = COLOR_YELLOW;
     wattMessage = String("HTTP/") + httpCode;
@@ -152,7 +161,7 @@ static void updateHud()
 void loop()
 {
   if ((millis() - wattUpdate) >= 15000) {
-    fetchWatt();
+    fetchHud();
     wattUpdate = millis();
     hudUpdate = true;
   }
@@ -175,6 +184,17 @@ int main() {
   s += (double)1234.5678;
   printf("[%s]\n", s.c_str());
 
+  String payload(
+      "color:#00ff68\n"
+      "line0: -814 W    39 msXXXXXX\n"
+      "line1:^11.981  v 5.637");
+  parseHudData(payload);
+  printf("[color == 00ff68 == %06lx]\n", bgColor);
+  printf("[line0 == %s]\n", message0.c_str());
+  printf("[line1 == %s]\n", message1.c_str());
+
   return 0;
 }
 #endif
+
+/* vim: set ts=8 sw=2 sts=2 et ai: */

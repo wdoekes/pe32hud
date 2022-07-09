@@ -1,4 +1,4 @@
 *.o
 
-/config.h
+/arduino_secrets.h
 /pe32hud.test
