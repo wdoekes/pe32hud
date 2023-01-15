@@ -1,0 +1,32 @@
+{
+  "version": 1,
+  "author": "Uri Shaked",
+  "editor": "wokwi",
+  "parts": [
+    { "type": "wokwi-esp32-devkit-v1", "id": "esp", "top": 26.66, "left": 80.66, "attrs": {} },
+    {
+      "type": "wokwi-lcd1602",
+      "id": "lcd1",
+      "top": -125.73,
+      "left": -116.41,
+      "attrs": { "pins": "i2c" }
+    },
+    { "type": "wokwi-dip-switch-8", "id": "sw1", "top": 55.97, "left": 264.4, "attrs": {} },
+    { "type": "wokwi-vcc", "id": "vcc1", "top": 14.3, "left": 288.84, "attrs": {} },
+    { "type": "wokwi-gnd", "id": "gnd1", "top": 13.53, "left": 261.21, "attrs": {} }
+  ],
+  "connections": [
+    [ "esp:TX0", "$serialMonitor:RX", "", [] ],
+    [ "esp:RX0", "$serialMonitor:TX", "", [] ],
+    [ "esp:GND.2", "lcd1:GND", "black", [ "h-236.49", "v-270.72" ] ],
+    [ "esp:VIN", "lcd1:VCC", "red", [ "h-228.49", "v-270.72" ] ],
+    [ "esp:D22", "lcd1:SCL", "gold", [ "h-307.46", "v-123.43" ] ],
+    [ "esp:TX0", "lcd1:SDA", "green", [ "h-316.13", "v-144.76" ] ],
+    [ "esp:D19", "vcc1:VCC", "red", [ "h48.21", "v-112.33", "h104.05" ] ],
+    [ "esp:D18", "gnd1:GND", "black", [ "h61.3", "v-101.76", "h28.15" ] ],
+    [ "esp:TX2", "sw1:1a", "green", [ "h90.1", "v-20.39" ] ],
+    [ "esp:D4", "sw1:3a", "green", [ "h0" ] ],
+    [ "esp:D2", "sw1:4a", "green", [ "h118.9", "v-49.79" ] ]
+  ],
+  "dependencies": {}
+}
