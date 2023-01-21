@@ -97,7 +97,7 @@ static void parseHudData(String hudData) {
   int start = 0;
   bool done = false;
 
-  bgColor = -1L;
+  bgColor = COLOR_YELLOW;
   message0 = "";
   message1 = "";
 
@@ -164,7 +164,10 @@ void blink(uint8_t pin, uint8_t what, unsigned long wait) {
 }
 
 void setup() {
+  delay(500);
   Serial.begin(115200);
+  while (!Serial)
+    ;
 
 #ifdef HAVE_ESP8266WIRE
   Wire.begin(PIN_SDA, PIN_SCL);
@@ -193,10 +196,10 @@ void setup() {
   digitalWrite(SOMFY_UP, HIGH);
 
 #ifdef HAVE_ESP8266WIFI
+  WiFi.mode(WIFI_STA);
   WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
-  while (WiFi.status() != WL_CONNECTED) {
-    blink(LED_RED, BLINK_WIFI, 1000);
-  }
+  Serial.println(F("Trying initial WiFi connection"));
+  ensureWifi();
 #endif
 
   dht11.setup(PIN_DHT11, DHTesp::DHT11);
@@ -205,11 +208,66 @@ void setup() {
 
   // Start
   bgColor = COLOR_YELLOW;
-  digitalWrite(LED_BLUE, LED_OFF);
+}
+
+unsigned long wifiFailures = 0;
+
+static void ensureWifi() {
+  wl_status_t wifi_status = WiFi.status();
+  digitalWrite(LED_BLUE, ((wifi_status == WL_CONNECTED) ? LED_OFF : LED_ON));
+
+  if (wifi_status == WL_CONNECTED) {
+    return;
+  }
+
+  int8_t ret = WiFi.waitForConnectResult(15000);
+  if (ret != -1) {
+    wifi_status = static_cast<wl_status_t>(ret);
+  }
+
+  switch (wifi_status) {
+    case WL_CONNECTED:
+      digitalWrite(LED_BLUE, LED_OFF);
+      wifiFailures = 0;
+      break;
+    case WL_IDLE_STATUS:
+    case WL_NO_SSID_AVAIL:
+    case WL_CONNECT_FAILED:
+    case WL_DISCONNECTED:
+      wifiFailures += 1;
+      setError(String(F("Wifi state ")) + wifi_status, String(F("")) + wifiFailures + F(" attempts"));
+      if (wifiFailures == 1) {
+        Serial << "\r\n";
+        WiFi.printDiag(Serial);
+        Serial << "\r\n";
+      }
+      blink(LED_RED, BLINK_WIFI, 1000);
+      break;
+#ifdef WL_CONNECT_WRONG_PASSWORD
+    case WL_CONNECT_WRONG_PASSWORD:
+      wifiFailures += 1;
+      setError(F("Wifi wrong creds."), String(F("")) + wifiFailures + F(" attempts"));
+      blink(LED_RED, BLINK_WIFI, 1000);
+      break;
+#endif
+    default:
+      wifiFailures += 1;
+      setError(String(F("Wifi unknown ")) + wifi_status, String(F("")) + wifiFailures + F(" attempts"));
+      WiFi.printDiag(Serial);
+      blink(LED_RED, BLINK_WIFI, 1000);
+      break;
+  }
+}
+
+static void setError(String msg0, String msg1) {
+  bgColor = COLOR_YELLOW;
+  message0 = msg0;
+  message1 = msg1;
 }
 
 static void fetchHud() {
 #ifdef HAVE_ESP8266WIFI
+  ensureWifi();
   if (WiFi.status() != WL_CONNECTED) {
     return;
   }
@@ -223,9 +281,7 @@ static void fetchHud() {
     String payload = http.getString().substring(0, 2048);
     parseHudData(payload);
   } else {
-    bgColor = COLOR_YELLOW;
-    message0 = String("HTTP/") + httpCode;
-    message1 = "(error)";
+    setError(String("HTTP/") + httpCode, F("(error)"));
   }
   http.end();
 #endif
@@ -238,7 +294,7 @@ static void updateHud() {
   lcd.print(message0.c_str());
   lcd.setCursor(0, 1);
   lcd.print(message1.c_str());
-  Serial << "HUD [" << message0 << "] [" << message1 << "]\r\n";
+  Serial << "HUD:    [" << message0 << "] [" << message1 << "]\r\n";
 }
 
 // CCS811 I2C Interface
@@ -304,7 +360,7 @@ void sampleCCS811() {
 void sampleDHT11() {
   float humidity = dht11.getHumidity();
   float temperature = dht11.getTemperature();
-  Serial << "DHT11: " <<                        // (comment for Arduino IDE)
+  Serial << "DHT11:  " <<                       // (comment for Arduino IDE)
     dht11.getStatusString() << " status,  " <<  // "OK"
     temperature << " 'C,  " <<                  // (comment for Arduino IDE)
     humidity << " phi(RH),  " <<                // (comment for Arduino IDE)
