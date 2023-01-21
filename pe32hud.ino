@@ -28,6 +28,8 @@
 #endif
 #include <rgb_lcd.h>
 
+#include <DHTesp.h>
+
 #include "CCS811.h"
 
 // The default pins are defined in variants/nodemcu/pins_arduino.h as
@@ -48,6 +50,7 @@ static constexpr int LED_RED = 0;
 static constexpr int LED_BLUE = 2;
 
 static constexpr int CCS811_RST = 12;
+static constexpr int PIN_DHT11 = 16;
 
 // We use output HIGH for all these PINs so they're not detected as
 // grounded. A button press would mean ground: which we simulate by
@@ -72,6 +75,8 @@ rgb_lcd_plus lcd;
 #ifdef HAVE_ESP8266WIFI
 WiFiClient wifiClient;
 #endif
+
+DHTesp dht11;
 
 enum {
   COLOR_RED = 0xff0000,
@@ -162,6 +167,10 @@ void setup() {
     delay(1000);
   }
 #endif
+
+  dht11.setup(PIN_DHT11, DHTesp::DHT11);
+
+
   delay(100);
 
   // Start
@@ -241,29 +250,35 @@ void sampleCCS811() {
 
     // Verify eCO2 is valid
     if (ccs_eco2 > CCS811_ECO2_MAX) {
-      Serial.print(F("(ERROR: CCS811 eCO2 Exceeded Limit)  "));
+      Serial.print(F(" (ERROR: CCS811 eCO2 Exceeded Limit) "));
     }
 
     // Print eCO2 to serial monitor
-    Serial.print(F("eCO2 = "));
-    Serial.print(ccs_eco2);
-    Serial.print(F(" ppm  "));
+    Serial << "CCS811: " << ccs_eco2 << " ppm(eCO2),  ";
 
     // Verify TVOC is valid
     if (ccs_tvoc > CCS811_TVOC_MAX) {
-      Serial.print(F("(ERROR: CCS811 TVOC Exceeded Limit)  "));
+      Serial.print(F(" (ERROR: CCS811 TVOC Exceeded Limit) "));
     }
 
     // Print TVOC to serial monitor
-    Serial.print(F("TVOC = "));
-    Serial.print(ccs_tvoc);
-    Serial.print(F(" ppb"));
+    Serial << ccs_tvoc << F(" ppb(TVOC)");
   } else {
-    Serial.print(F("(ERROR: CCS811 Data Not Ready)  "));
+    Serial.print(F(" (ERROR: CCS811 Data Not Ready) "));
     //hasCcs = false;
   }
 
   Serial.println();
+}
+
+void sampleDHT11() {
+  float humidity = dht11.getHumidity();
+  float temperature = dht11.getTemperature();
+  Serial << "DHT11: " <<                        // (comment for Arduino IDE)
+    dht11.getStatusString() << " status,  " <<  // "OK"
+    temperature << " 'C,  " <<                  // (comment for Arduino IDE)
+    humidity << " phi(RH),  " <<                // (comment for Arduino IDE)
+    dht11.computeHeatIndex(temperature, humidity, false) << " (heatIdx)\r\n";
 }
 
 void loop() {
@@ -278,8 +293,8 @@ void loop() {
       digitalWrite(CCS811_RST, LOW);
       delay(20);  // reset/wake pulses must be at least 20us (micro!)
       digitalWrite(CCS811_RST, HIGH);
-      delay(20);  // 20ms until after boot/reset are we up again
-      if (ccs.begin(0x5A)) {
+      delay(20);          // 20ms until after boot/reset are we up again
+      if (ccs.begin()) {  // 0x5A
         hasCcs = true;
         // Print CCS811 sensor information
         Serial.println(F("CCS811 Sensor Enabled:"));
@@ -323,6 +338,7 @@ void loop() {
       // Sample CCS811 Data
       sampleCCS811();
     }
+    sampleDHT11();
   }
 }
 
