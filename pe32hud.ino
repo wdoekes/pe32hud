@@ -132,6 +132,37 @@ static void parseHudData(String hudData) {
   }
 }
 
+enum {
+  BLINK_WIFI
+};
+
+void blink(uint8_t pin, uint8_t what, unsigned long wait) {
+  unsigned long waited;
+  if (what == BLINK_WIFI) {
+    digitalWrite(pin, LED_ON);
+    delay(350);
+    digitalWrite(pin, LED_OFF);
+    delay(100);
+    digitalWrite(pin, LED_ON);
+    delay(150);
+    digitalWrite(pin, LED_OFF);
+    waited = 600;
+  } else {
+    digitalWrite(pin, LED_ON);
+    delay(100);
+    digitalWrite(pin, LED_OFF);
+    waited = 100;
+  }
+  if (wait >= waited) {
+    wait -= waited;
+  } else {
+    wait = 0;
+  }
+  if (wait) {
+    delay(wait);
+  }
+}
+
 void setup() {
   Serial.begin(115200);
 
@@ -149,7 +180,7 @@ void setup() {
   pinMode(LED_RED, OUTPUT);
   pinMode(LED_BLUE, OUTPUT);
   digitalWrite(LED_BLUE, LED_ON);
-  digitalWrite(LED_RED, LED_ON);
+  digitalWrite(LED_RED, LED_OFF);
 
   pinMode(CCS811_RST, OUTPUT);
   digitalWrite(CCS811_RST, HIGH);  // not reset
@@ -164,12 +195,11 @@ void setup() {
 #ifdef HAVE_ESP8266WIFI
   WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
   while (WiFi.status() != WL_CONNECTED) {
-    delay(1000);
+    blink(LED_RED, BLINK_WIFI, 1000);
   }
 #endif
 
   dht11.setup(PIN_DHT11, DHTesp::DHT11);
-
 
   delay(100);
 
