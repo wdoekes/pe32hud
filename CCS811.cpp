@@ -645,7 +645,6 @@ void CCS811::write8(byte reg, byte value) {
 // num  - Number of bytes to read
 //*****************************************************************************
 void CCS811::read(uint8_t reg, uint8_t *buf, uint8_t num) {
-  uint8_t value;
   uint8_t pos = 0;
 
   // On arduino we need to read in 32 byte chunks
