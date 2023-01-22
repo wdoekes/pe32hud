@@ -3,9 +3,9 @@
 # their type, while the Arduino IDE does not open the .cpp file as well
 # (it already has this file open as the ino file).
 HEADERS = $(wildcard *.h bogoduino/*.h)
-OBJECTS = pe32hud.o bogo_rbg_lcd.o \
-	  $(filter-out bogoduino/bogoduino.o, \
-	    $(addsuffix .o, $(basename $(wildcard bogoduino/*.cpp))))
+OBJECTS = pe32hud.o CCS811.o \
+	  $(addsuffix .o, $(basename $(wildcard bogoduino/*.cpp))) \
+	  $(addsuffix .o, $(basename $(wildcard local_bogoduino/*.cpp)))
 
 # --- Arduino Uno AVR (8-bit RISC, by Atmel) ---
 # /snap/arduino/current/hardware/arduino/avr/boards.txt:
@@ -30,7 +30,9 @@ OBJECTS = pe32hud.o bogo_rbg_lcd.o \
 
 # --- Test mode ---
 CXX = g++
-CPPFLAGS = -DTEST_BUILD -g -I./bogoduino -I../../libraries/Grove_-_LCD_RGB_Backlight
+CPPFLAGS = -DTEST_BUILD -g -I./bogoduino -I./local_bogoduino \
+	   -I../../libraries/Grove_-_LCD_RGB_Backlight \
+	   -I../../libraries/DHT_sensor_library_for_ESPx
 CXXFLAGS = -Wall -Os -fdata-sections -ffunction-sections
 LDFLAGS = -Wl,--gc-sections # -s(trip)
 ifeq ($(DEBUG),)

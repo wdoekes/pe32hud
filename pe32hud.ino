@@ -23,13 +23,6 @@
  */
 #include "pe32hud.h"
 
-#ifdef HAVE_ESP8266WIRE
-#include <Wire.h>
-#endif
-#include <rgb_lcd.h>
-
-#include <DHTesp.h>
-
 #include "CCS811.h"
 
 // The default pins are defined in variants/nodemcu/pins_arduino.h as
@@ -132,36 +125,14 @@ static void parseHudData(String hudData) {
   }
 }
 
-enum {
+#ifdef HAVE_ESP8266WIFI
+enum blink_mode {
   BLINK_WIFI
 };
 
-void blink(uint8_t pin, uint8_t what, unsigned long wait) {
-  unsigned long waited;
-  if (what == BLINK_WIFI) {
-    digitalWrite(pin, LED_ON);
-    delay(350);
-    digitalWrite(pin, LED_OFF);
-    delay(100);
-    digitalWrite(pin, LED_ON);
-    delay(150);
-    digitalWrite(pin, LED_OFF);
-    waited = 600;
-  } else {
-    digitalWrite(pin, LED_ON);
-    delay(100);
-    digitalWrite(pin, LED_OFF);
-    waited = 100;
-  }
-  if (wait >= waited) {
-    wait -= waited;
-  } else {
-    wait = 0;
-  }
-  if (wait) {
-    delay(wait);
-  }
-}
+static void ensureWifi();
+static void blink(uint8_t pin, enum blink_mode how, unsigned long wait);
+#endif
 
 void setup() {
   delay(500);
@@ -169,8 +140,13 @@ void setup() {
   while (!Serial)
     ;
 
-#ifdef HAVE_ESP8266WIRE
-  Wire.begin(PIN_SDA, PIN_SCL);
+#ifdef ARDUINO_ARCH_ESP8266
+  Wire.begin(PIN_SDA, PIN_SCL); // non-standard esp8266 invocation
+#else
+#ifdef ARDUINO_ARCH_ESP32
+  Wire.setPins(PIN_SDA, PIN_SCL);
+#endif
+  Wire.begin(); // standard Arduino invocation
 #endif
 
   lcd.begin(LCD_COLS, LCD_ROWS); /* 16 cols, 2 rows */
@@ -210,8 +186,15 @@ void setup() {
   bgColor = COLOR_YELLOW;
 }
 
+static void setError(String msg0, String msg1) {
+  bgColor = COLOR_YELLOW;
+  message0 = msg0;
+  message1 = msg1;
+}
+
 unsigned long wifiFailures = 0;
 
+#ifdef HAVE_ESP8266WIFI
 static void ensureWifi() {
   wl_status_t wifi_status = WiFi.status();
   digitalWrite(LED_BLUE, ((wifi_status == WL_CONNECTED) ? LED_OFF : LED_ON));
@@ -259,11 +242,33 @@ static void ensureWifi() {
   }
 }
 
-static void setError(String msg0, String msg1) {
-  bgColor = COLOR_YELLOW;
-  message0 = msg0;
-  message1 = msg1;
+static void blink(uint8_t pin, enum blink_mode how, unsigned long wait) {
+  unsigned long waited;
+  if (how == BLINK_WIFI) {
+    digitalWrite(pin, LED_ON);
+    delay(350);
+    digitalWrite(pin, LED_OFF);
+    delay(100);
+    digitalWrite(pin, LED_ON);
+    delay(150);
+    digitalWrite(pin, LED_OFF);
+    waited = 600;
+  } else {
+    digitalWrite(pin, LED_ON);
+    delay(100);
+    digitalWrite(pin, LED_OFF);
+    waited = 100;
+  }
+  if (wait >= waited) {
+    wait -= waited;
+  } else {
+    wait = 0;
+  }
+  if (wait) {
+    delay(wait);
+  }
 }
+#endif
 
 static void fetchHud() {
 #ifdef HAVE_ESP8266WIFI
@@ -363,8 +368,7 @@ void sampleDHT11() {
   Serial << "DHT11:  " <<                       // (comment for Arduino IDE)
     dht11.getStatusString() << " status,  " <<  // "OK"
     temperature << " 'C,  " <<                  // (comment for Arduino IDE)
-    humidity << " phi(RH),  " <<                // (comment for Arduino IDE)
-    dht11.computeHeatIndex(temperature, humidity, false) << " (heatIdx)\r\n";
+    humidity << " phi(RH)\r\n";                 // (comment for Arduino IDE)
 }
 
 void loop() {
@@ -440,6 +444,10 @@ int main() {
   s += (double)1234.5678;
   printf("[%s]\n", s.c_str());
 
+  Serial.print("hex test (should be 0xA) 0x");
+  Serial.print(10, HEX);
+  Serial.println();
+
   String payload(
     "color:#00ff68\n"
     "line0: -814 W    39 msXXXXXX\n"
@@ -448,6 +456,10 @@ int main() {
   printf("[color == 00ff68 == %06lx]\n", bgColor);
   printf("[line0 == %s]\n", message0.c_str());
   printf("[line1 == %s]\n", message1.c_str());
+
+  // Test setup and loop once
+  setup();
+  loop();
 
   return 0;
 }
