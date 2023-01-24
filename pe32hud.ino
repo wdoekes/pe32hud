@@ -28,15 +28,19 @@
 #define DEBUG
 
 // The default pins are defined in variants/nodemcu/pins_arduino.h as
-// SDA=4 and SCL=5. [...] You can also choose the pinds yourself using
+// SDA=4 and SCL=5. [...] You can also choose the pins yourself using
 // the I2C constructor Wire.begin(int sda, int scl);
 // D1..D7 are all good, D0 is not.
 // See: https://randomnerdtutorials.com/esp8266-pinout-reference-gpios/
 static constexpr int PIN_SCL = 5;  // D1 / GPIO5
 static constexpr int PIN_SDA = 4;  // D2 / GPIO4
 
+// Display on I2C, with a 16x2 matrix
 static constexpr int LCD_ROWS = 2;
 static constexpr int LCD_COLS = 16;
+
+// Air quality sensor on I2C, with a reset PIN (LOW to reset)
+static constexpr int CCS811_RST = 12;
 
 // LEDs are shared with GPIO pins 0 and 2
 static constexpr int LED_ON = LOW;
@@ -44,7 +48,7 @@ static constexpr int LED_OFF = HIGH;
 static constexpr int LED_RED = 0;
 static constexpr int LED_BLUE = 2;
 
-static constexpr int CCS811_RST = 12;
+// Temperature sensor using a single GPIO pin
 static constexpr int PIN_DHT11 = 16;
 
 // We use output HIGH for all these PINs so they're not detected as
@@ -53,6 +57,14 @@ static constexpr int PIN_DHT11 = 16;
 static constexpr int SOMFY_SEL = 14;  // D5 / GPIO14
 static constexpr int SOMFY_DN = 13;   // D7 / GPIO13
 static constexpr int SOMFY_UP = 15;   // D8 / GPIO15
+
+#ifdef TEST_BUILD
+int main(int argc, char** argv);
+#endif
+
+// esp/xtensa notes: Using F-strings below reduces RODATA (constants)
+// and increases IROM (code in flash) usage. Both normal constants and
+// static constexpr values are optimized away when possible.
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -124,7 +136,7 @@ public:
   void loop() {
     if ((millis() - m_lastact) >= m_interval) {
 #ifdef DEBUG
-      Serial << "  --AirQualitySensorComponent: sample/reset\r\n";
+      Serial << F("  --AirQualitySensorComponent: sample/reset\r\n");
 #endif
       m_lastact = millis();
       if (m_ready) {
@@ -197,7 +209,7 @@ private:
       }
 
       // Print eCO2 to serial monitor
-      Serial << "CCS811: " << ccs_eco2 << " ppm(eCO2),  ";
+      Serial << F("CCS811: ") << ccs_eco2 << F(" ppm(eCO2),  ");
 
       // Verify TVOC is valid
       if (ccs_tvoc > CCS811_TVOC_MAX) {
@@ -225,16 +237,17 @@ private:
   bool m_hasupdate;
 
 public:
+  DisplayComponent()
+    : m_message0(F("Initializing...")),  // (fix ide wrap)
+      m_bgcolor(Device::COLOR_YELLOW), m_hasupdate(true) {}
+
   void setup() {
     m_lcd.begin(LCD_COLS, LCD_ROWS);  // 16 cols, 2 rows
-    m_message0 = "Display initialized";
-    m_bgcolor = Device::COLOR_YELLOW;
-    m_hasupdate = true;
   }
 
   void loop() {
     if (m_hasupdate) {
-      Serial << "  --DisplayComponent: show\r\n";
+      Serial << F("  --DisplayComponent: show\r\n");
       show();
       m_hasupdate = false;
     }
@@ -255,9 +268,9 @@ private:
     m_lcd.print(m_message0.c_str());
     m_lcd.setCursor(0, 1);
     m_lcd.print(m_message1.c_str());
-    Serial << "HUD:    [" <<  // header
-      m_message0 << "] [" <<  // top message
-      m_message1 << "]\r\n";  // bottom message
+    Serial << F("HUD:    [") <<  // header
+      m_message0 << F("] [") <<  // top message
+      m_message1 << F("]\r\n");  // bottom message
   }
 };
 
@@ -313,6 +326,10 @@ public:
 
 
 class NetworkComponent {
+#ifdef TEST_BUILD
+  friend int main(int argc, char** argv);
+#endif
+
 public:
   struct RemoteResult {
     String message0;
@@ -342,7 +359,7 @@ public:
     ensure_wifi();
 #endif
     if ((millis() - m_lastact) >= m_interval) {
-      Serial << "  --NetworkComponent: fetch/update\r\n";
+      Serial << F("  --NetworkComponent: fetch/update\r\n");
       String remote_packet = fetch_remote();
       m_lastact = millis();  // after poll, so we don't hammer on failure
 
@@ -381,9 +398,9 @@ private:
         m_connectfails += 1;
         Device.set_error(String(F("Wifi state ")) + wifi_status, String(F("")) + m_connectfails + F(" attempts"));
         if (m_connectfails == 1) {
-          Serial << "\r\n";
+          Serial << F("\r\n");
           WiFi.printDiag(Serial);
-          Serial << "\r\n";
+          Serial << F("\r\n");
         }
         break;
 #ifdef WL_CONNECT_WRONG_PASSWORD
@@ -409,17 +426,15 @@ private:
     int http_code = http.GET();
     if (http_code >= 200 && http_code < 300) {
       // Fetch data and truncate just in case.
-      payload = http.getString().substring(0, 2048);
+      payload = http.getString().substring(0, 512);
     } else {
-      Device.set_error(String("HTTP/") + http_code, F("(error)"));
+      Device.set_error(String(F("HTTP/")) + http_code, F("(error)"));
     }
     http.end();
 #endif
     return payload;
   }
 
-public:
-  // public, for testing
   static void parse_remote(const String& remote_packet, RemoteResult& res) {
     int start = 0;
     bool done = false;
@@ -453,7 +468,6 @@ public:
     }
   }
 
-private:
   void handle_remote(const RemoteResult& res) {
     Device.set_text(res.message0, res.message1, res.color);
     Device.add_action(res.sunscreen);
@@ -517,7 +531,7 @@ private:
     // TODO: something with flickering/blinking?
     // lcd.setColor(COLOR_YELLOW)?
 #ifdef DEBUG
-    Serial << "  --SunscreenComponent: pressing " << m_state << "\r\n";
+    Serial << F("  --SunscreenComponent: pressing ") << m_state << F("\r\n");
 #endif
     press_at_most_one(m_state);
     m_state = static_cast<enum state>(m_state & ~REQUEST);
@@ -525,7 +539,7 @@ private:
 
   void handle_depress() {
 #ifdef DEBUG
-    Serial << "  --SunscreenComponent: depressing " << m_state << "\r\n";
+    Serial << F("  --SunscreenComponent: depressing ") << m_state << F("\r\n");
 #endif
     press_at_most_one(DEPRESSED);
     m_state = DEPRESSED;
@@ -548,7 +562,7 @@ public:
   void loop() {
     if ((millis() - m_lastact) >= m_interval) {
 #ifdef DEBUG
-      Serial << "  --TemperatureSensorComponent: sample\r\n";
+      Serial << F("  --TemperatureSensorComponent: sample\r\n");
 #endif
       m_lastact = millis();
       sample();
@@ -559,10 +573,10 @@ private:
   void sample() {
     float humidity = m_dht11.getHumidity();
     float temperature = m_dht11.getTemperature();
-    Serial << "DHT11:  " <<                         // (comment for Arduino IDE)
-      m_dht11.getStatusString() << " status,  " <<  // "OK"
-      temperature << " 'C,  " <<                    // (comment for Arduino IDE)
-      humidity << " phi(RH)\r\n";                   // (comment for Arduino IDE)
+    Serial << F("DHT11:  ") <<                         // (comment for Arduino IDE)
+      m_dht11.getStatusString() << F(" status,  ") <<  // "OK"
+      temperature << F(" 'C,  ") <<                    // (comment for Arduino IDE)
+      humidity << F(" phi(RH)\r\n");                   // (comment for Arduino IDE)
   }
 };
 
@@ -655,7 +669,7 @@ void loop() {
 
 #if TEST_BUILD
 #include "xtoa.h"
-int main() {
+int main(int argc, char** argv) {
   char buf[30];
   dtostrf(1234.5678, 15, 2, buf);
   printf("[%s]\n", buf);
@@ -672,7 +686,8 @@ int main() {
   String payload(
     "color:#00ff68\n"
     "line0: -814 W    39 msXXXXXX\n"
-    "line1:^11.981  v 5.637");
+    "line1:^11.981  v 5.637\n"
+    "action:UP");
   NetworkComponent::RemoteResult res;
   NetworkComponent::parse_remote(payload, res);
   printf("[color == 00ff68 == %06lx]\n", res.color);
@@ -685,11 +700,11 @@ int main() {
   Serial.println(millis());
 
   // Test setup and loop once
-  printf("--- setup ---\n");
+  printf("<<< setup >>>\n");
   setup();
   printf("\n");
   for (int i = 0; i < 5; ++i) {
-    printf("--- loop %d ---\n", i);
+    printf("<<< loop %d >>>\n", i);
     loop();
     printf("\n");
   }
