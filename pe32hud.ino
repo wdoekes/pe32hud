@@ -101,16 +101,32 @@ public:
     COLOR_GREEN = 0x00ff00,
     COLOR_BLUE = 0x0000ff
   };
+  enum alert {
+    BOOTING = 1,
+    INACTIVE_WIFI = 2,
+    INACTIVE_DHT11 = 4,
+    INACTIVE_CCS811 = 8,
+    NOTIFY_SUNSCREEN = 16
+  };
 
 private:
   enum action m_lastsunscreen;
+  uint8_t m_alerts;
 
 public:
   Device()
     : m_lastsunscreen(ACTION_SUNSCREEN_NONE) {}
+
   void set_text(const String& msg0, const String& msg1, unsigned long color);
   void set_error(const String& msg0, const String& msg1);
+
+  void set_alert(enum alert al) { set_or_clear_alert(al, true); }
+  void clear_alert(enum alert al) { set_or_clear_alert(al, false); }
+
   void add_action(enum action atn);
+
+private:
+  void set_or_clear_alert(enum alert al, bool is_alert);
 };
 
 Device Device;
@@ -122,57 +138,95 @@ Device Device;
 
 class AirQualitySensorComponent {
 private:
-  static constexpr unsigned long m_interval = 30000;
+  static constexpr unsigned long m_interval = 7500;  // 7.5 s
   unsigned long m_lastact;
-  bool m_ready;
+  enum state {
+    STATE_NONE,
+    STATE_RESETTING,
+    STATE_WAKING,
+    STATE_ACTIVE,
+    STATE_FAILING
+  } m_state;
   CCS811 m_ccs811;
 
 public:
   void setup() {
+    Device.set_alert(Device::INACTIVE_CCS811);
     pinMode(CCS811_RST, OUTPUT);
     digitalWrite(CCS811_RST, HIGH);  // not reset
   }
 
   void loop() {
-    if ((millis() - m_lastact) >= m_interval) {
-#ifdef DEBUG
-      Serial << F("  --AirQualitySensorComponent: sample/reset\r\n");
-#endif
-      m_lastact = millis();
-      if (m_ready) {
+    enum state new_state = STATE_NONE;
+
+    switch (m_state) {
+    case STATE_NONE:
+      // Force reset, we _must_ call begin() after this.
+      digitalWrite(CCS811_RST, LOW);
+      new_state = STATE_RESETTING;
+      break;
+    case STATE_RESETTING:
+      // Reset/wake pulses must be at least 20us, so 1ms is enough.
+      if ((millis() - m_lastact) <= 1) {
+        return;
+      }
+      digitalWrite(CCS811_RST, HIGH);
+      new_state = STATE_WAKING;
+      break;
+    case STATE_WAKING:
+      // At 20ms after boot/reset are we up again.
+      if ((millis() - m_lastact) <= 20) {
+        return;
+      }
+      if (m_ccs811.begin()) {  // addr 90/0x5A
+        Device.clear_alert(Device::INACTIVE_CCS811);
+        new_state = STATE_ACTIVE;
+        dump_info();
         sample();
       } else {
-        reset();
+        Serial << F("ERROR: CCS811 communication failure\r\n");
+        Device.set_alert(Device::INACTIVE_CCS811);
+        new_state = STATE_FAILING;
       }
+      break;
+    case STATE_ACTIVE:
+      // Sample every 10 seconds, normally.
+      if ((millis() - m_lastact) < 10000) {
+        return;
+      }
+      new_state = STATE_ACTIVE;  // keep same state
+      sample();
+      break;
+    case STATE_FAILING:
+      // Wait a while if we failed to start.
+      if ((millis() - m_lastact) < 30000) {
+        return;
+      }
+      new_state = STATE_NONE;
+      break;
     }
+#ifdef DEBUG
+    Serial << F("  --AirQualitySensorComponent: state ") <<  // (idefix)
+        m_state << F(" -> ") << new_state << F("\r\n");
+#endif
+    m_state = new_state;
+    m_lastact = millis();
   }
 
 private:
-  void reset() {
-    // XXX: we don't want delay like this...
-    digitalWrite(LED_RED, LED_ON);
-    // Force reset, we _must_ call begin() after this.
-    digitalWrite(CCS811_RST, LOW);
-    delay(20);  // reset/wake pulses must be at least 20us (micro!)
-    digitalWrite(CCS811_RST, HIGH);
-    delay(20);               // 20ms until after boot/reset are we up again
-    if (m_ccs811.begin()) {  // 0x5A
-      m_ready = true;
-      // Print CCS811 sensor information
-      Serial.println(F("CCS811 Sensor Enabled:"));
-      Serial.print(F("Hardware ID:           0x"));
-      Serial.println(m_ccs811.getHWID(), HEX);
-      Serial.print(F("Hardware Version:      0x"));
-      Serial.println(m_ccs811.getHWVersion(), HEX);
-      Serial.print(F("Firmware Boot Version: 0x"));
-      Serial.println(m_ccs811.getFWBootVersion(), HEX);
-      Serial.print(F("Firmware App Version:  0x"));
-      Serial.println(m_ccs811.getFWAppVersion(), HEX);
-      Serial.println();
-    } else {
-      Serial.println(F("ERROR: No CCSCould not find a valid CCS811 sensor"));
-    }
-    digitalWrite(LED_RED, LED_OFF);
+  void dump_info() {
+    // Print CCS811 sensor information
+    // FIXME: improved Serial << usage
+    Serial.println(F("CCS811 Sensor Enabled:"));
+    Serial.print(F("Hardware ID:           0x"));
+    Serial.println(m_ccs811.getHWID(), HEX);
+    Serial.print(F("Hardware Version:      0x"));
+    Serial.println(m_ccs811.getHWVersion(), HEX);
+    Serial.print(F("Firmware Boot Version: 0x"));
+    Serial.println(m_ccs811.getFWBootVersion(), HEX);
+    Serial.print(F("Firmware App Version:  0x"));
+    Serial.println(m_ccs811.getFWAppVersion(), HEX);
+    Serial.println();
   }
 
   void sample() {
@@ -180,21 +234,21 @@ private:
     uint16_t ccs_tvoc;  // CCS811 TVOC
     uint8_t ccs_error;  // CCS811 error register
 
-    //Serial.println(F("Reading CCS811 Sensor"));
-
     // Read the sensor data, this updates multiple fields
     // in the CCS811 library
     m_ccs811.readAlgResultDataRegister();
 
     // Read error register if an error was reported
     if (m_ccs811.hasERROR()) {
+      // FIXME: improved Serial << usage
       Serial.println(F("ERROR: CCS811 Error Flag Set"));
 
       ccs_error = m_ccs811.getERROR_ID();
       Serial.print(F("CCS811 Error Register = "));
       Serial.println(ccs_error);
       Serial.println();
-      m_ready = false;
+      Device.set_alert(Device::INACTIVE_CCS811);
+      m_state = STATE_FAILING;
       return;
     }
 
@@ -220,9 +274,7 @@ private:
       Serial << ccs_tvoc << F(" ppb(TVOC)");
     } else {
       Serial.print(F(" (ERROR: CCS811 Data Not Ready) "));
-      //hasCcs = false;
     }
-
     Serial.println();
   }
 };
@@ -242,12 +294,16 @@ public:
       m_bgcolor(Device::COLOR_YELLOW), m_hasupdate(true) {}
 
   void setup() {
+    Device.set_alert(Device::BOOTING);  // useless if set/clear in setup()
     m_lcd.begin(LCD_COLS, LCD_ROWS);  // 16 cols, 2 rows
+    Device.clear_alert(Device::BOOTING);
   }
 
   void loop() {
     if (m_hasupdate) {
+#ifdef DEBUG
       Serial << F("  --DisplayComponent: show\r\n");
+#endif
       show();
       m_hasupdate = false;
     }
@@ -276,52 +332,82 @@ private:
 
 
 class LedStatusComponent {
-private:
-  enum blink_mode {
-    BLINK_WIFI
+public:
+  enum blinkmode {
+    NO_BLINK = -1,
+    BLINK_BOOT = 0,
+    BLINK_WIFI = 1,
+    BLINK_DHT11 = 2,
+    BLINK_CCS811 = 3,
+    BLINK_SUNSCREEN = 4,
   };
+
+private:
+  enum blinkmode m_blinkmode;
+  const int8_t m_blinktimes[5][14] = {
+    // 100=red_on(100ms), -100=red_off(100ms), 0=stop
+    {100, 0,},                                                      // BLINK_BOOT
+    {100, 100, 100, -100, 100, 0,},                                 // BLINK_WIFI   "wiii-fi"
+    {100, -100, 100, -100, 100, 0,},                                // BLINK_DHT11  "d-h-t"
+    {100, -100, 100, 100, 100, -100, 100, 0},                       // BLINK_CCS811 "c-ooo-2"
+    {50, -50, 50, -50, 50, -50, 50, -50, 50, -50, 50, -50, 50, 0}   // BLINK_SUNSCREEN
+  };
+  const int8_t* m_blinktime;
+  unsigned long m_lastact;
 
 public:
   void setup() {
+    // Blue led ON during boot (or errors). Red can show stuff whenever.
     pinMode(LED_RED, OUTPUT);
     pinMode(LED_BLUE, OUTPUT);
-    // Blue led ON during boot (or errors). Red can show stuff whenever.
-    digitalWrite(LED_BLUE, LED_ON);
-    digitalWrite(LED_RED, LED_OFF);
   }
 
   void loop() {
-    /* fixme: how do we know what to show? */
+    // Not doing anything?
+    if (m_blinktime == NULL) {
+      if (m_blinkmode != NO_BLINK) {
+        // Start blinking.
+        m_blinktime = m_blinktimes[m_blinkmode];
+        //printf("lastact %lu (+%lu) val %hhd S\n", m_lastact, (millis() - m_lastact), *m_blinktime);
+        digitalWrite(LED_BLUE, LED_ON);
+        digitalWrite(LED_RED, *m_blinktime > 0 ? LED_ON : LED_OFF);
+        m_lastact = millis();
+      }
+      return;
+    }
+
+    // The current value is not 0 but -100 or 100.
+    if (*m_blinktime) {
+      uint8_t abs_time = (*m_blinktime >= 0 ? *m_blinktime : -*m_blinktime);
+      if ((millis() - m_lastact) >= abs_time) {
+        m_blinktime++;
+        //printf("lastact %lu (+%lu) val %hhd\n", m_lastact, (millis() - m_lastact), *m_blinktime);
+        digitalWrite(LED_RED, *m_blinktime > 0 ? LED_ON : LED_OFF);
+        m_lastact = millis();
+      }
+    // The current value is 0 and we've waited for a second.
+    } else if ((millis() - m_lastact) >= 1000) {
+      if (m_blinkmode != NO_BLINK) {
+        // Restart blinking.
+        m_blinktime = m_blinktimes[m_blinkmode];
+        //printf("lastact %lu (+%lu) val %hhd R\n", m_lastact, (millis() - m_lastact), *m_blinktime);
+        digitalWrite(LED_RED, *m_blinktime > 0 ? LED_ON : LED_OFF);
+      } else {
+        // Stop blinking.
+        m_blinktime = NULL;
+        digitalWrite(LED_BLUE, LED_OFF);
+        digitalWrite(LED_RED, LED_OFF);
+      }
+      m_lastact = millis();
+    }
   }
 
-#if 0
-  void blink(uint8_t pin, enum blink_mode how, unsigned long wait) {
-    unsigned long waited;
-    if (how == BLINK_WIFI) {
-      digitalWrite(pin, LED_ON);
-      delay(350);
-      digitalWrite(pin, LED_OFF);
-      delay(100);
-      digitalWrite(pin, LED_ON);
-      delay(150);
-      digitalWrite(pin, LED_OFF);
-      waited = 600;
-    } else {
-      digitalWrite(pin, LED_ON);
-      delay(100);
-      digitalWrite(pin, LED_OFF);
-      waited = 100;
-    }
-    if (wait >= waited) {
-      wait -= waited;
-    } else {
-      wait = 0;
-    }
-    if (wait) {
-      delay(wait);
+  void set_blink(enum blinkmode bm) {
+    if (bm != m_blinkmode) {
+      Serial << F("LedStatusComponent: switching blinkmode to ") << bm << F("\r\n");
+      m_blinkmode = bm;
     }
   }
-#endif
 };
 
 
@@ -341,82 +427,112 @@ public:
 private:
   static constexpr unsigned long m_interval = 5000;
   unsigned long m_lastact;
+  unsigned long m_wifidowntime;
 #ifdef HAVE_ESP8266WIFI
   WiFiClient m_wificlient;
-  unsigned m_connectfails;
+  wl_status_t m_wifistatus;
 #endif
 
 public:
+  NetworkComponent()
+#ifdef HAVE_ESP8266WIFI
+    : m_wifistatus(WL_DISCONNECTED)
+#endif
+    {};
+
   void setup() {
+    Device.set_alert(Device::INACTIVE_WIFI);
+    m_wifidowntime = millis();
 #ifdef HAVE_ESP8266WIFI
     WiFi.mode(WIFI_STA);
-    WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
+    WiFi.persistent(false);
+    WiFi.setAutoReconnect(false);  // needed?
+    handle_wifi_state_change(WL_IDLE_STATUS);
+    m_wifistatus = WL_IDLE_STATUS;
+    m_wifidowntime = m_lastact = millis();
 #endif
   }
 
   void loop() {
 #ifdef HAVE_ESP8266WIFI
-    ensure_wifi();
-#endif
-    if ((millis() - m_lastact) >= m_interval) {
-      Serial << F("  --NetworkComponent: fetch/update\r\n");
-      String remote_packet = fetch_remote();
-      m_lastact = millis();  // after poll, so we don't hammer on failure
-
-      if (remote_packet.length()) {
-        RemoteResult res;
-        parse_remote(remote_packet, res);
-        handle_remote(res);
+    wl_status_t wifistatus;
+    if ((millis() - m_lastact) >= 500 && ((wifistatus = WiFi.status()) != WL_CONNECTED || wifistatus != m_wifistatus)) {
+      if (m_wifistatus != wifistatus) {
+        handle_wifi_state_change(wifistatus);
+        m_wifistatus = wifistatus;
+        if (wifistatus == WL_CONNECTED) {
+          sample();
+        }
+      } else if (m_wifistatus != WL_CONNECTED && (millis() - m_wifidowntime) > 5000) {
+        wifistatus = WL_IDLE_STATUS;
+        handle_wifi_state_change(wifistatus);
+        m_wifistatus = wifistatus;
+        m_wifidowntime = millis();
       }
+      m_lastact = millis();
+    }
+#endif
+    if (m_wifistatus == WL_CONNECTED && (millis() - m_lastact) >= m_interval) {
+      sample();
+      m_lastact = millis();  // after poll, so we don't hammer on failure
     }
   }
 
 private:
 #ifdef HAVE_ESP8266WIFI
-  void ensure_wifi() {
-    wl_status_t wifi_status = WiFi.status();
-    digitalWrite(LED_BLUE, ((wifi_status == WL_CONNECTED) ? LED_OFF : LED_ON));
+  void handle_wifi_state_change(wl_status_t wifistatus) {
+    Serial << F("Wifi change from ") << m_wifistatus << F(" to ") << wifistatus << F("\r\n");
 
-    if (wifi_status == WL_CONNECTED) {
-      return;
+    if (m_wifistatus == WL_CONNECTED) {
+      m_wifidowntime = millis();
     }
+    String downtime(String("") + ((millis() - m_wifidowntime) / 1000) + " downtime");
 
-    int8_t ret = WiFi.waitForConnectResult(15000);
-    if (ret != -1) {
-      wifi_status = static_cast<wl_status_t>(ret);
-    }
-
-    switch (wifi_status) {
-      case WL_CONNECTED:
-        digitalWrite(LED_BLUE, LED_OFF);
-        m_connectfails = 0;
-        break;
+    switch (wifistatus) {
       case WL_IDLE_STATUS:
+        Device.set_alert(Device::INACTIVE_WIFI);
+        Device.set_error(F("Wifi connecting"), downtime);
+        WiFi.disconnect(true, true);
+        WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
+        Serial << "wifi attempt... ?\r\n";
+        break;
+      case WL_CONNECTED:
+        Device.clear_alert(Device::INACTIVE_WIFI);
+        digitalWrite(LED_BLUE, LED_OFF);
+        break;
       case WL_NO_SSID_AVAIL:
       case WL_CONNECT_FAILED:
       case WL_DISCONNECTED:
-        m_connectfails += 1;
-        Device.set_error(String(F("Wifi state ")) + wifi_status, String(F("")) + m_connectfails + F(" attempts"));
-        if (m_connectfails == 1) {
-          Serial << F("\r\n");
-          WiFi.printDiag(Serial);
-          Serial << F("\r\n");
-        }
+        Device.set_alert(Device::INACTIVE_WIFI);
+        Device.set_error(String(F("Wifi state ")) + wifistatus, downtime);
+        Serial << F("\r\n");
+        WiFi.printDiag(Serial);  // XXX: beware, shows password on serial output
+        Serial << F("\r\n");
         break;
 #ifdef WL_CONNECT_WRONG_PASSWORD
       case WL_CONNECT_WRONG_PASSWORD:
-        m_connectfails += 1;
-        Device.set_error(F("Wifi wrong creds."), String(F("")) + m_connectfails + F(" attempts"));
+        Device.set_alert(Device::INACTIVE_WIFI);
+        Device.set_error(F("Wifi wrong creds."), downtime);
         break;
 #endif
       default:
-        m_connectfails += 1;
-        Device.set_error(String(F("Wifi unknown ")) + wifi_status, String(F("")) + m_connectfails + F(" attempts"));
-        WiFi.printDiag(Serial);
+        Device.set_alert(Device::INACTIVE_WIFI);
+        Device.set_error(String(F("Wifi unknown ")) + wifistatus, downtime);
+        WiFi.printDiag(Serial);  // XXX: beware, shows password on serial output
         break;
     }
   }
 #endif
+
+  void sample() {
+    Serial << F("  --NetworkComponent: fetch/update\r\n");
+    String remote_packet = fetch_remote();
+    if (remote_packet.length()) {
+      RemoteResult res;
+      parse_remote(remote_packet, res);
+      handle_remote(res);
+    }
+  }
 
   String fetch_remote() {
     String payload;
@@ -492,6 +608,7 @@ private:
 
 public:
   void setup() {
+    Device.clear_alert(Device::NOTIFY_SUNSCREEN);
     pinMode(SOMFY_SEL, OUTPUT);
     pinMode(SOMFY_DN, OUTPUT);
     pinMode(SOMFY_UP, OUTPUT);
@@ -528,6 +645,7 @@ private:
   }
 
   void handle_press_request() {
+    Device.set_alert(Device::NOTIFY_SUNSCREEN);
     // TODO: something with flickering/blinking?
     // lcd.setColor(COLOR_YELLOW)?
 #ifdef DEBUG
@@ -538,6 +656,7 @@ private:
   }
 
   void handle_depress() {
+    Device.clear_alert(Device::NOTIFY_SUNSCREEN);
 #ifdef DEBUG
     Serial << F("  --SunscreenComponent: depressing ") << m_state << F("\r\n");
 #endif
@@ -555,8 +674,10 @@ private:
 
 public:
   void setup() {
+    Device.set_alert(Device::INACTIVE_DHT11);
     m_dht11.setup(PIN_DHT11, DHTesp::DHT11);
     m_lastact = (millis() - m_interval);
+    Device.clear_alert(Device::INACTIVE_DHT11);
   }
 
   void loop() {
@@ -606,6 +727,28 @@ void Device::set_error(const String& msg0, const String& msg1) {
   displayComponent.set_text(msg0, msg1, COLOR_YELLOW);
 }
 
+void Device::set_or_clear_alert(enum alert al, bool is_alert) {
+  if (is_alert) {
+    m_alerts |= al;
+  } else {
+    m_alerts &= ~al;
+  }
+  if (m_alerts & NOTIFY_SUNSCREEN) {
+    ledStatusComponent.set_blink(LedStatusComponent::BLINK_SUNSCREEN);
+  } else if (m_alerts & INACTIVE_WIFI) {
+    ledStatusComponent.set_blink(LedStatusComponent::BLINK_WIFI);
+  } else if (m_alerts & INACTIVE_DHT11) {
+    ledStatusComponent.set_blink(LedStatusComponent::BLINK_DHT11);
+  } else if (m_alerts & INACTIVE_CCS811) {
+    ledStatusComponent.set_blink(LedStatusComponent::BLINK_CCS811);
+  } else if (m_alerts) {
+    // What problems?
+    ledStatusComponent.set_blink(LedStatusComponent::BLINK_BOOT);
+  } else {
+    ledStatusComponent.set_blink(LedStatusComponent::NO_BLINK);
+  }
+}
+
 void Device::add_action(enum action atn) {
   if (atn & ACTION_SUNSCREEN) {
     if (m_lastsunscreen != atn) {
@@ -636,6 +779,8 @@ void setup() {
   delay(500);
   Serial.begin(115200);
   while (!Serial) {}
+  delay(500);
+  Serial << F("Booting...\r\n");
 
   // The Wire needs to be configured for SDA/SCL. Both the
   // AirQualityComponent and the DisplayComponent interface through I2C.
@@ -703,10 +848,14 @@ int main(int argc, char** argv) {
   printf("<<< setup >>>\n");
   setup();
   printf("\n");
-  for (int i = 0; i < 5; ++i) {
-    printf("<<< loop %d >>>\n", i);
+  int i;
+  unsigned long ms, lastms = millis();
+  for (i = 0, ms = millis(); i < 50; ++i, ms += 105) {
+    millis(ms);  // HACKS: set the milliseconds
+    printf("<<< loop %d (%lu->%lu) >>>\n", i, lastms, ms);
     loop();
     printf("\n");
+    lastms = millis();
   }
 
   return 0;
