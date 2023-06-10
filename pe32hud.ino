@@ -644,6 +644,7 @@ private:
     digitalWrite(SOMFY_SEL, st == REQUEST_SEL ? LOW : HIGH);
     digitalWrite(SOMFY_DN, st == REQUEST_DN ? LOW : HIGH);
     digitalWrite(SOMFY_UP, st == REQUEST_UP ? LOW : HIGH);
+    m_lastact = millis();
   }
 
   void handle_press_request() {
