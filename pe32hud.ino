@@ -239,6 +239,7 @@ private:
   }
 
   void sample() {
+    // FIXME: use SimpleKalmanFilter here (and for DHT11)
     uint16_t ccs_eco2;  // CCS811 eCO2
     uint16_t ccs_tvoc;  // CCS811 TVOC
     uint8_t ccs_error;  // CCS811 error register
@@ -283,7 +284,7 @@ private:
       Serial << ccs_tvoc << F(" ppb(TVOC)\n");
 
       // Publish values
-      Device.publish("pe32hud/co2", (
+      Device.publish("pe32/hud/co2/xwwwform", (
         String("eco2=") + ccs_eco2 + String("&tvoc=") + ccs_tvoc));
     } else {
       Serial.print(F(" (ERROR: CCS811 Data Not Ready)\n"));
@@ -443,14 +444,20 @@ private:
   unsigned long m_lastact;
   unsigned long m_wifidowntime;
 #ifdef HAVE_ESP8266WIFI
-  WiFiClient m_wificlient;
   wl_status_t m_wifistatus;
+  // NOTE: We need a WiFiClient for _each_ component that does network
+  // connections (httpclient and mqttclient), otherwise using one will
+  // disconnect the TCP session of the other.
+  // See also: https://forum.arduino.cc/t/simultaneous-mqtt-and-http-post/430361/7
+  WiFiClient m_httpbackend;
+  WiFiClient m_mqttbackend;
+  MqttClient m_mqttclient;
 #endif
 
 public:
   NetworkComponent()
 #ifdef HAVE_ESP8266WIFI
-    : m_wifistatus(WL_DISCONNECTED)
+    : m_wifistatus(WL_DISCONNECTED), m_mqttclient(m_mqttbackend)
 #endif
     {};
 
@@ -461,21 +468,25 @@ public:
 #ifdef HAVE_ESP8266WIFI
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);
-    WiFi.setAutoReconnect(false);  // needed?
+    WiFi.setAutoReconnect(false);  // FIXME: needed?
     handle_wifi_state_change(WL_IDLE_STATUS);
     m_wifistatus = WL_IDLE_STATUS;
     m_wifidowntime = m_lastact = millis();
+    // Do not forget setId(). Some MQTT daemons will reject id-less connections.
+    m_mqttclient.setId(String(Device.get_guid()).substring(0, 23));
 #endif
   }
 
   void loop() {
 #ifdef HAVE_ESP8266WIFI
     wl_status_t wifistatus;
-    if ((millis() - m_lastact) >= 500 && ((wifistatus = WiFi.status()) != WL_CONNECTED || wifistatus != m_wifistatus)) {
+    if ((millis() - m_lastact) >= 500 && (
+        (wifistatus = WiFi.status()) != WL_CONNECTED || wifistatus != m_wifistatus)) {
       if (m_wifistatus != wifistatus) {
         handle_wifi_state_change(wifistatus);
         m_wifistatus = wifistatus;
         if (wifistatus == WL_CONNECTED) {
+          ensure_mqtt();
           sample();
         }
       } else if (m_wifistatus != WL_CONNECTED && (millis() - m_wifidowntime) > 5000) {
@@ -488,27 +499,30 @@ public:
     }
 #endif
     if (m_wifistatus == WL_CONNECTED && (millis() - m_lastact) >= m_interval) {
+      ensure_mqtt();
       sample();
       m_lastact = millis();  // after poll, so we don't hammer on failure
     }
   }
 
   void push_remote(String topic, String formdata) {
-    Serial << F("push_remote: ") << topic << " :: " << "device_id" << Device.get_guid() << "&" << formdata << "\n";
-#if 0
+    Serial << F("push_remote: ") << topic << " :: " << "device_id=" << Device.get_guid() << "&" << formdata << "\n";
+#if 1
+    if (m_mqttclient.connected()) {
     m_mqttclient.beginMessage(topic);
     m_mqttclient.print("device_id=");
     m_mqttclient.print(Device.get_guid());
     m_mqttclient.print("&");
     m_mqttclient.print(formdata);
     m_mqttclient.endMessage();
+    }
 #endif
   }
 
 private:
 #ifdef HAVE_ESP8266WIFI
   void handle_wifi_state_change(wl_status_t wifistatus) {
-    Serial << F("Wifi change from ") << m_wifistatus << F(" to ") << wifistatus << F("\r\n");
+    Serial << F("NetworkComponent: Wifi state ") << m_wifistatus << F(" -> ") << wifistatus << F("\r\n");
 
     if (m_wifistatus == WL_CONNECTED) {
       m_wifidowntime = millis();
@@ -521,7 +535,7 @@ private:
         Device.set_error(F("Wifi connecting"), downtime);
         WiFi.disconnect(true, true);
         WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
-        Serial << "wifi attempt... ?\r\n";
+        Serial << F("NetworkComponent: Wifi connecting...\r\n");
         break;
       case WL_CONNECTED:
         Device.clear_alert(Device::INACTIVE_WIFI);
@@ -532,9 +546,9 @@ private:
       case WL_DISCONNECTED:
         Device.set_alert(Device::INACTIVE_WIFI);
         Device.set_error(String(F("Wifi state ")) + wifistatus, downtime);
-        Serial << F("\r\n");
-        WiFi.printDiag(Serial);  // XXX: beware, shows password on serial output
-        Serial << F("\r\n");
+        Serial << F("--\r\n");
+        WiFi.printDiag(Serial);  // FIXME/XXX: beware, shows password on serial output
+        Serial << F("--\r\n");
         break;
 #ifdef WL_CONNECT_WRONG_PASSWORD
       case WL_CONNECT_WRONG_PASSWORD:
@@ -545,14 +559,30 @@ private:
       default:
         Device.set_alert(Device::INACTIVE_WIFI);
         Device.set_error(String(F("Wifi unknown ")) + wifistatus, downtime);
-        WiFi.printDiag(Serial);  // XXX: beware, shows password on serial output
+        Serial << F("--\r\n");
+        WiFi.printDiag(Serial);  // FIXME/XXX: beware, shows password on serial output
+        Serial << F("--\r\n");
         break;
     }
   }
 #endif
 
+  void ensure_mqtt() {
+    m_mqttclient.poll();
+    if (!m_mqttclient.connected()) {
+      if (m_mqttclient.connect(SECRET_MQTT_BROKER, SECRET_MQTT_PORT)) {
+        Serial << F("NetworkComponent: MQTT connected to " SECRET_MQTT_BROKER "\r\n");
+      } else {
+        Serial << F("NetworkComponent MQTT connection to " SECRET_MQTT_BROKER " failed: ")
+          << m_mqttclient.connectError() << F("\r\n");
+      }
+    }
+  }
+
   void sample() {
+#ifdef DEBUG
     Serial << F("  --NetworkComponent: fetch/update\r\n");
+#endif
     String remote_packet = fetch_remote();
     if (remote_packet.length()) {
       RemoteResult res;
@@ -565,7 +595,7 @@ private:
     String payload;
 #ifdef HAVE_ESP8266HTTPCLIENT
     HTTPClient http;
-    http.begin(m_wificlient, SECRET_HUD_URL);
+    http.begin(m_httpbackend, SECRET_HUD_URL);
     int http_code = http.GET();
     if (http_code >= 200 && http_code < 300) {
       // Fetch data and truncate just in case.
@@ -703,6 +733,7 @@ class TemperatureSensorComponent {
 private:
   static constexpr unsigned long m_interval = 30000;
   unsigned long m_lastact;
+  // FIXME: use SimpleKalmanFilter here (and eco2)
   DHTesp m_dht11;
 
 public:
@@ -735,7 +766,7 @@ private:
       humidity << F(" phi(RH)\r\n");                   // (comment for Arduino IDE)
 
     // Publish values
-    Device.publish("pe32hud/temp", (
+    Device.publish("pe32/hud/temp/xwwwform", (
       String("status=") + m_dht11.getStatusString() +
       String("&temperature=") + temperature +
       String("&humidity=") + humidity));

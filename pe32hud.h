@@ -10,6 +10,7 @@
 #define HAVE_ESP8266WIFI
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
+#include <ArduinoMqttClient.h>
 #elif defined(ARDUINO_ARCH_AVR)
 /* nothing yet */
 #elif defined(TEST_BUILD)
