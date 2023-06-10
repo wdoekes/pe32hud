@@ -110,12 +110,19 @@ public:
   };
 
 private:
+  /* We use the guid to store something unique to identify the device by.
+   * For now, we'll populate it with the ESP8266 Wifi MAC address. */
+  char m_guid[24]; // "EUI48:11:22:33:44:55:66"
+
   enum action m_lastsunscreen;
   uint8_t m_alerts;
 
 public:
   Device()
-    : m_lastsunscreen(ACTION_SUNSCREEN_NONE) {}
+    : m_lastsunscreen(ACTION_SUNSCREEN_NONE) { memcpy(m_guid, "EUI48:11:22:33:44:55:66", 24); }
+
+  const char* get_guid() { return m_guid; }
+  void set_guid(const String& guid) { strncpy(m_guid, guid.c_str(), sizeof(m_guid) - 1); }
 
   void set_text(const String& msg0, const String& msg1, unsigned long color);
   void set_error(const String& msg0, const String& msg1);
@@ -124,6 +131,8 @@ public:
   void clear_alert(enum alert al) { set_or_clear_alert(al, false); }
 
   void add_action(enum action atn);
+
+  void publish(const String& topic, const String& formdata);
 
 private:
   void set_or_clear_alert(enum alert al, bool is_alert);
@@ -138,7 +147,7 @@ Device Device;
 
 class AirQualitySensorComponent {
 private:
-  static constexpr unsigned long m_interval = 7500;  // 7.5 s
+  static constexpr unsigned long m_interval = 30000;  // 30s
   unsigned long m_lastact;
   enum state {
     STATE_NONE,
@@ -190,8 +199,8 @@ public:
       }
       break;
     case STATE_ACTIVE:
-      // Sample every 10 seconds, normally.
-      if ((millis() - m_lastact) < 10000) {
+      // Sample every m_interval seconds, normally.
+      if ((millis() - m_lastact) < m_interval) {
         return;
       }
       new_state = STATE_ACTIVE;  // keep same state
@@ -199,7 +208,7 @@ public:
       break;
     case STATE_FAILING:
       // Wait a while if we failed to start.
-      if ((millis() - m_lastact) < 30000) {
+      if ((millis() - m_lastact) < m_interval) {
         return;
       }
       new_state = STATE_NONE;
@@ -271,11 +280,14 @@ private:
       }
 
       // Print TVOC to serial monitor
-      Serial << ccs_tvoc << F(" ppb(TVOC)");
+      Serial << ccs_tvoc << F(" ppb(TVOC)\n");
+
+      // Publish values
+      Device.publish("pe32hud/co2", (
+        String("eco2=") + ccs_eco2 + String("&tvoc=") + ccs_tvoc));
     } else {
-      Serial.print(F(" (ERROR: CCS811 Data Not Ready) "));
+      Serial.print(F(" (ERROR: CCS811 Data Not Ready)\n"));
     }
-    Serial.println();
   }
 };
 
@@ -443,6 +455,7 @@ public:
     {};
 
   void setup() {
+    Device.set_guid(String("EUI48:") + WiFi.macAddress());
     Device.set_alert(Device::INACTIVE_WIFI);
     m_wifidowntime = millis();
 #ifdef HAVE_ESP8266WIFI
@@ -478,6 +491,18 @@ public:
       sample();
       m_lastact = millis();  // after poll, so we don't hammer on failure
     }
+  }
+
+  void push_remote(String topic, String formdata) {
+    Serial << F("push_remote: ") << topic << " :: " << "device_id" << Device.get_guid() << "&" << formdata << "\n";
+#if 0
+    m_mqttclient.beginMessage(topic);
+    m_mqttclient.print("device_id=");
+    m_mqttclient.print(Device.get_guid());
+    m_mqttclient.print("&");
+    m_mqttclient.print(formdata);
+    m_mqttclient.endMessage();
+#endif
   }
 
 private:
@@ -609,14 +634,19 @@ private:
   } m_state;
 
 public:
-  void setup() {
-    Device.clear_alert(Device::NOTIFY_SUNSCREEN);
+  SunscreenComponent() {
+    // Run this _before_ setup time. Otherwise we might press buttons before setup is called.
+    // However, we're pushing buttons while flashing the device, unfortunately.
     pinMode(SOMFY_SEL, OUTPUT);
     pinMode(SOMFY_DN, OUTPUT);
     pinMode(SOMFY_UP, OUTPUT);
     digitalWrite(SOMFY_SEL, HIGH);
     digitalWrite(SOMFY_DN, HIGH);
     digitalWrite(SOMFY_UP, HIGH);
+  }
+
+  void setup() {
+    Device.clear_alert(Device::NOTIFY_SUNSCREEN);
   }
 
   void loop() {
@@ -697,10 +727,18 @@ private:
   void sample() {
     float humidity = m_dht11.getHumidity();
     float temperature = m_dht11.getTemperature();
+
+    // Print values
     Serial << F("DHT11:  ") <<                         // (comment for Arduino IDE)
       m_dht11.getStatusString() << F(" status,  ") <<  // "OK"
       temperature << F(" 'C,  ") <<                    // (comment for Arduino IDE)
       humidity << F(" phi(RH)\r\n");                   // (comment for Arduino IDE)
+
+    // Publish values
+    Device.publish("pe32hud/temp", (
+      String("status=") + m_dht11.getStatusString() +
+      String("&temperature=") + temperature +
+      String("&humidity=") + humidity));
   }
 };
 
@@ -771,6 +809,10 @@ void Device::add_action(enum action atn) {
       m_lastsunscreen = atn;
     }
   }
+}
+
+void Device::publish(const String& topic, const String& formdata) {
+    networkComponent.push_remote(topic, formdata);
 }
 
 
