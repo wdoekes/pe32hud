@@ -23,9 +23,15 @@ typedef enum {
 
 struct WiFiClient {
     wl_status_t status() { return WL_CONNECTED; }
-    void begin(const String &ssid, const String &password) {}
     void mode(WiFiMode_t mode) {}
+    void persistent(bool value) {}
+    void setAutoReconnect(bool value) {}
+
+    void begin(const String &ssid, const String &password) {}
+    void disconnect(bool val1, bool val2) {}
     uint8_t waitForConnectResult(unsigned long delay = 60000) { return WL_CONNECTED; }
+    char const* macAddress() const { return "11:22:33:44:55:66"; }
+
     void printDiag(Print &p) {}
 };
 
