@@ -3,7 +3,9 @@
 # their type, while the Arduino IDE does not open the .cpp file as well
 # (it already has this file open as the ino file).
 HEADERS = $(wildcard *.h bogoduino/*.h)
-OBJECTS = pe32hud.o CCS811.o \
+OBJECTS = pe32hud.o CCS811.o Device.o \
+	  AirQualitySensorComponent.o DisplayComponent.o NetworkComponent.o \
+	  SunscreenComponent.o TemperatureSensorComponent.o \
 	  $(addsuffix .o, $(basename $(wildcard bogoduino/*.cpp))) \
 	  $(addsuffix .o, $(basename $(wildcard local_bogoduino/*.cpp)))
 

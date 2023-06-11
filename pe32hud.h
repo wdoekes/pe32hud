@@ -19,11 +19,9 @@
 #include <ArduinoMqttClient.h>
 #endif
 
-/* */
-#include <rgb_lcd.h>	// Grove_-_LCD_RGB_Backlight
-#include <DHTesp.h>	// DHT_sensor_library_for_ESPx
-
 #include "arduino_secrets.h"
+
+#define DEBUG
 
 /* Neat trick to let us do multiple Serial.print() using the << operator:
  * Serial << x << " " << y << LF; */
