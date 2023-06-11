@@ -16,6 +16,7 @@
 #elif defined(TEST_BUILD)
 #define HAVE_ESP8266WIFI
 #include <ESP8266WiFi.h>
+#include <ArduinoMqttClient.h>
 #endif
 
 /* */
