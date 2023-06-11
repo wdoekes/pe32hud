@@ -335,17 +335,19 @@ class LedStatusComponent {
 public:
   enum blinkmode {
     NO_BLINK = -1,
-    BLINK_BOOT = 0,
-    BLINK_WIFI = 1,
-    BLINK_DHT11 = 2,
-    BLINK_CCS811 = 3,
-    BLINK_SUNSCREEN = 4,
+    BLINK_NORMAL = 0,
+    BLINK_BOOT = 1,
+    BLINK_WIFI = 2,
+    BLINK_DHT11 = 3,
+    BLINK_CCS811 = 4,
+    BLINK_SUNSCREEN = 5,
   };
 
 private:
   enum blinkmode m_blinkmode;
-  const int8_t m_blinktimes[5][14] = {
+  const int8_t m_blinktimes[6][14] = {
     // 100=red_on(100ms), -100=red_off(100ms), 0=stop
+    {10, 0,},                                                       // BLINK_NORMAL (no blue)
     {100, 0,},                                                      // BLINK_BOOT
     {100, 100, 100, -100, 100, 0,},                                 // BLINK_WIFI   "wiii-fi"
     {100, -100, 100, -100, 100, 0,},                                // BLINK_DHT11  "d-h-t"
@@ -369,7 +371,7 @@ public:
         // Start blinking.
         m_blinktime = m_blinktimes[m_blinkmode];
         //printf("lastact %lu (+%lu) val %hhd S\n", m_lastact, (millis() - m_lastact), *m_blinktime);
-        digitalWrite(LED_BLUE, LED_ON);
+        digitalWrite(LED_BLUE, m_blinkmode == BLINK_NORMAL ? LED_OFF : LED_ON);
         digitalWrite(LED_RED, *m_blinktime > 0 ? LED_ON : LED_OFF);
         m_lastact = millis();
       }
@@ -745,7 +747,7 @@ void Device::set_or_clear_alert(enum alert al, bool is_alert) {
     // What problems?
     ledStatusComponent.set_blink(LedStatusComponent::BLINK_BOOT);
   } else {
-    ledStatusComponent.set_blink(LedStatusComponent::NO_BLINK);
+    ledStatusComponent.set_blink(LedStatusComponent::BLINK_NORMAL);
   }
 }
 
@@ -776,7 +778,7 @@ void Device::add_action(enum action atn) {
 //
 
 void setup() {
-  delay(500);
+  delay(3000);
   Serial.begin(115200);
   while (!Serial) {}
   delay(500);
