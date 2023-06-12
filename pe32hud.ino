@@ -75,6 +75,7 @@ Device Device;  // the one and only Device
 AirQualitySensorComponent airQualitySensorComponent(PIN_SDA, PIN_SCL, CCS811_RST);
 DisplayComponent displayComponent(PIN_SDA, PIN_SCL);
 LedStatusComponent ledStatusComponent(LED_RED, LED_BLUE);
+// FIXME: pass passphrase here..
 NetworkComponent networkComponent;
 SunscreenComponent sunscreenComponent(SOMFY_SEL, SOMFY_DN, SOMFY_UP);
 TemperatureSensorComponent temperatureSensorComponent(PIN_DHT11);

@@ -18,8 +18,8 @@ void NetworkComponent::setup()
     m_wifidowntime = millis();
 #ifdef HAVE_ESP8266WIFI
     WiFi.mode(WIFI_STA);
-    WiFi.persistent(false);
-    WiFi.setAutoReconnect(false);  // FIXME: needed?
+    WiFi.persistent(false);         // false is default, we don't need to save to flash
+    WiFi.setAutoReconnect(false);   // we don't need this, we do it manually?
     handle_wifi_state_change(WL_IDLE_STATUS);
     m_wifistatus = WL_IDLE_STATUS;
     m_wifidowntime = m_lastact = millis();
@@ -32,25 +32,30 @@ void NetworkComponent::loop()
 {
 #ifdef HAVE_ESP8266WIFI
     wl_status_t wifistatus;
-    if ((millis() - m_lastact) >= 500 && (
+    if ((millis() - m_lastact) >= 3000 && (
                 (wifistatus = WiFi.status()) != WL_CONNECTED || wifistatus != m_wifistatus)) {
         if (m_wifistatus != wifistatus) {
             handle_wifi_state_change(wifistatus);
             m_wifistatus = wifistatus;
-            if (wifistatus == WL_CONNECTED) {
-                ensure_mqtt();
-                sample();
-            }
+            // Don't set m_lastact. We'll want to run WL_CONNECTED code below.
         } else if (m_wifistatus != WL_CONNECTED && (millis() - m_wifidowntime) > 5000) {
             wifistatus = WL_IDLE_STATUS;
             handle_wifi_state_change(wifistatus);
             m_wifistatus = wifistatus;
-            m_wifidowntime = millis();
+            m_lastact = millis();
         }
-        m_lastact = millis();
     }
 #endif
     if (m_wifistatus == WL_CONNECTED && (millis() - m_lastact) >= m_interval) {
+        const unsigned char *bssid = WiFi.BSSID();
+        Serial << F("NetworkComponent: RSSI: ") << WiFi.RSSI() << F(", BSSID: 0x");
+        Serial.print(bssid[0], HEX);
+        Serial.print(bssid[1], HEX);
+        Serial.print(bssid[2], HEX);
+        Serial.print(bssid[3], HEX);
+        Serial.print(bssid[4], HEX);
+        Serial.print(bssid[5], HEX);
+        Serial << F("\r\n");
         ensure_mqtt();
         sample();
         m_lastact = millis();  // after poll, so we don't hammer on failure
@@ -59,13 +64,14 @@ void NetworkComponent::loop()
 
 void NetworkComponent::push_remote(String topic, String formdata)
 {
-    Serial << F("push_remote: ") << topic << " :: " << "device_id=" << Device.get_guid() << "&" << formdata << "\n";
 #if 1
     if (m_mqttclient.connected()) {
+        Serial << F("NetworkComponent: push: ") << topic << F(" :: ")
+            << F("device_id=") << Device.get_guid() << F("&") << formdata << F("\r\n");
         m_mqttclient.beginMessage(topic);
-        m_mqttclient.print("device_id=");
+        m_mqttclient.print(F("device_id="));
         m_mqttclient.print(Device.get_guid());
-        m_mqttclient.print("&");
+        m_mqttclient.print(F("&"));
         m_mqttclient.print(formdata);
         m_mqttclient.endMessage();
     }
@@ -75,6 +81,7 @@ void NetworkComponent::push_remote(String topic, String formdata)
 #ifdef HAVE_ESP8266WIFI
 void NetworkComponent::handle_wifi_state_change(wl_status_t wifistatus)
 {
+    // FIXME: translate wifistatus from number to something readable
     Serial << F("NetworkComponent: Wifi state ") << m_wifistatus << F(" -> ") << wifistatus << F("\r\n");
 
     if (m_wifistatus == WL_CONNECTED) {
@@ -87,8 +94,20 @@ void NetworkComponent::handle_wifi_state_change(wl_status_t wifistatus)
             Device.set_alert(Device::INACTIVE_WIFI);
             Device.set_error(F("Wifi connecting"), downtime);
             WiFi.disconnect(true, true);
+#ifdef SECRET_WIFI_BSSID
+            // Speed up wifi connect, especially for poor (<= -70 RSSI) connections.
+            if ((millis() - m_wifidowntime) < 30000) {
+                const uint8_t bssid[6] = SECRET_WIFI_BSSID;
+                WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS, 0, bssid, true);
+                Serial << F("NetworkComponent: Wifi connecting (with preset BSSID)...\r\n");
+            } else {
+                WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
+                Serial << F("NetworkComponent: Wifi connecting...\r\n");
+            }
+#else
             WiFi.begin(SECRET_WIFI_SSID, SECRET_WIFI_PASS);
             Serial << F("NetworkComponent: Wifi connecting...\r\n");
+#endif
             break;
         case WL_CONNECTED:
             Device.clear_alert(Device::INACTIVE_WIFI);
@@ -98,9 +117,6 @@ void NetworkComponent::handle_wifi_state_change(wl_status_t wifistatus)
         case WL_DISCONNECTED:
             Device.set_alert(Device::INACTIVE_WIFI);
             Device.set_error(String(F("Wifi state ")) + wifistatus, downtime);
-            Serial << F("--\r\n");
-            WiFi.printDiag(Serial);  // FIXME/XXX: beware, shows password on serial output
-            Serial << F("--\r\n");
             break;
 #ifdef WL_CONNECT_WRONG_PASSWORD
         case WL_CONNECT_WRONG_PASSWORD:
@@ -111,11 +127,13 @@ void NetworkComponent::handle_wifi_state_change(wl_status_t wifistatus)
         default:
             Device.set_alert(Device::INACTIVE_WIFI);
             Device.set_error(String(F("Wifi unknown ")) + wifistatus, downtime);
-            Serial << F("--\r\n");
-            WiFi.printDiag(Serial);  // FIXME/XXX: beware, shows password on serial output
-            Serial << F("--\r\n");
             break;
     }
+#ifdef DEBUG
+    Serial << F("  --NetworkComponent: Wifi values BEGIN\r\n");
+    WiFi.printDiag(Serial);  // FIXME/XXX: beware, shows password on serial output
+    Serial << F("  --NetworkComponent: Wifi values END\r\n");
+#endif
 }
 #endif
 
@@ -126,7 +144,7 @@ void NetworkComponent::ensure_mqtt()
         if (m_mqttclient.connect(SECRET_MQTT_BROKER, SECRET_MQTT_PORT)) {
             Serial << F("NetworkComponent: MQTT connected to " SECRET_MQTT_BROKER "\r\n");
         } else {
-            Serial << F("NetworkComponent MQTT connection to " SECRET_MQTT_BROKER " failed: ")
+            Serial << F("NetworkComponent: MQTT connection to " SECRET_MQTT_BROKER " failed: ")
                 << m_mqttclient.connectError() << F("\r\n");
         }
     }
