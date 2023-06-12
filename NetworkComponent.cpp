@@ -92,7 +92,6 @@ void NetworkComponent::handle_wifi_state_change(wl_status_t wifistatus)
             break;
         case WL_CONNECTED:
             Device.clear_alert(Device::INACTIVE_WIFI);
-            //digitalWrite(LED_BLUE, LED_OFF); // FIXME: ???
             break;
         case WL_NO_SSID_AVAIL:
         case WL_CONNECT_FAILED:
