@@ -16,13 +16,12 @@ public:
   }
 };
 
-DisplayComponent::DisplayComponent(uint8_t pin_sda, uint8_t pin_scl) :
+DisplayComponent::DisplayComponent(TwoWire* theWire) :
+    // FIXME: rbg_lcd.h does not actually use this theWire
     m_lcd(new rgb_lcd_plus),
     m_message0(F("Initializing...")),
     m_bgcolor(Device::COLOR_YELLOW),
-    m_hasupdate(true),
-    m_pin_sda(pin_sda),
-    m_pin_scl(pin_scl)
+    m_hasupdate(true)
 {
 }
 

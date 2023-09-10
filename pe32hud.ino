@@ -97,7 +97,7 @@ Gpio ledBlue(LED_BLUE, LED_OFF, LED_ON);
 Device Device;  // the one and only Device
 
 AirQualitySensorComponent airQualitySensorComponent(&Wire, ccs811Reset);
-DisplayComponent displayComponent(PIN_SDA, PIN_SCL);
+DisplayComponent displayComponent(&Wire);
 LedStatusComponent ledStatusComponent(
   [](bool on){ ledRed.toggle(on); }, [](bool on){ ledBlue.toggle(on); });
 NetworkComponent networkComponent; // FIXME: pass SECRET_* here..?

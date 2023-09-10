@@ -17,11 +17,8 @@ private:
     unsigned long m_bgcolor;
     bool m_hasupdate;
 
-    const uint8_t m_pin_sda;
-    const uint8_t m_pin_scl;
-
 public:
-    DisplayComponent(uint8_t pin_sda, uint8_t pin_scl);
+    DisplayComponent(TwoWire* theWire = &Wire);
 
     void setup();
     void loop();
