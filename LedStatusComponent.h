@@ -33,19 +33,17 @@ private:
     const int8_t* m_blinktime;
     unsigned long m_lastact;
 
-    const uint8_t m_led_red;
-    const uint8_t m_led_blue;
+    void (*m_switch_led_red)(bool);
+    void (*m_switch_led_blue)(bool);
 
 public:
-    LedStatusComponent(uint8_t led_red, uint8_t led_blue)
-        : m_led_red(led_red), m_led_blue(led_blue) {}
+    LedStatusComponent(void (*switch_led_red)(bool), void (*switch_led_blue)(bool))
+        : m_switch_led_red(switch_led_red), m_switch_led_blue(switch_led_blue) {}
 
     void setup() {
         // Blue led ON during boot (or errors). Red can show stuff whenever.
-        pinMode(m_led_red, OUTPUT);
-        pinMode(m_led_blue, OUTPUT);
-        digitalWrite(m_led_blue, LED_ON);
-        digitalWrite(m_led_red, LED_OFF);
+        m_switch_led_blue(true);
+        m_switch_led_red(false);
     }
 
     void loop() {
@@ -54,8 +52,8 @@ public:
             if (m_blinkmode != NO_BLINK) {
                 // Start blinking.
                 m_blinktime = m_blinktimes[m_blinkmode];
-                digitalWrite(m_led_blue, m_blinkmode == BLINK_NORMAL ? LED_OFF : LED_ON);
-                digitalWrite(m_led_red, *m_blinktime > 0 ? LED_ON : LED_OFF);
+                m_switch_led_blue(m_blinkmode != BLINK_NORMAL);
+                m_switch_led_red(*m_blinktime > 0);
                 m_lastact = millis();
             }
             return;
@@ -66,7 +64,7 @@ public:
             uint8_t abs_time = (*m_blinktime >= 0 ? *m_blinktime : -*m_blinktime);
             if ((millis() - m_lastact) >= abs_time) {
                 m_blinktime++;
-                digitalWrite(m_led_red, *m_blinktime > 0 ? LED_ON : LED_OFF);
+                m_switch_led_red(*m_blinktime > 0);
                 m_lastact = millis();
             }
             // The current value is 0 and we've waited for a second.
@@ -74,13 +72,13 @@ public:
             if (m_blinkmode == NO_BLINK) {
                 // Stop blinking.
                 m_blinktime = NULL;
-                digitalWrite(m_led_red, LED_OFF);
-                digitalWrite(m_led_blue, LED_OFF);
+                m_switch_led_red(false);
+                m_switch_led_blue(false);
             } else {
                 // Restart blinking.
                 m_blinktime = m_blinktimes[m_blinkmode];
-                digitalWrite(m_led_red, *m_blinktime > 0 ? LED_ON : LED_OFF);
-                digitalWrite(m_led_blue, m_blinkmode == BLINK_NORMAL ? LED_OFF : LED_ON);
+                m_switch_led_red(*m_blinktime > 0);
+                m_switch_led_blue(m_blinkmode != BLINK_NORMAL);
             }
             m_lastact = millis();
         }

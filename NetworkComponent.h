@@ -22,7 +22,7 @@ private:
     static constexpr unsigned long m_interval = 5000;
     unsigned long m_lastact;
     unsigned long m_wifidowntime;
-#ifdef HAVE_ESP8266WIFI
+#ifdef HAVE_ESPWIFI
     wl_status_t m_wifistatus;
     // NOTE: We need a WiFiClient for _each_ component that does network
     // connections (httpclient and mqttclient), otherwise using one will
@@ -42,7 +42,7 @@ public:
     void push_remote(String topic, String formdata);
 
 private:
-#ifdef HAVE_ESP8266WIFI
+#ifdef HAVE_ESPWIFI
     void handle_wifi_state_change(wl_status_t wifistatus);
 #endif
 

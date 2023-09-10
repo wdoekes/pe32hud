@@ -5,7 +5,7 @@
 extern Device Device;
 
 NetworkComponent::NetworkComponent()
-#ifdef HAVE_ESP8266WIFI
+#ifdef HAVE_ESPWIFI
     : m_wifistatus(WL_DISCONNECTED), m_mqttclient(m_mqttbackend)
 #endif
 {
@@ -16,7 +16,7 @@ void NetworkComponent::setup()
     Device.set_guid(String("EUI48:") + WiFi.macAddress());
     Device.set_alert(Device::INACTIVE_WIFI);
     m_wifidowntime = millis();
-#ifdef HAVE_ESP8266WIFI
+#ifdef HAVE_ESPWIFI
     WiFi.mode(WIFI_STA);
     WiFi.persistent(false);         // false is default, we don't need to save to flash
     WiFi.setAutoReconnect(false);   // we don't need this, we do it manually?
@@ -30,7 +30,7 @@ void NetworkComponent::setup()
 
 void NetworkComponent::loop()
 {
-#ifdef HAVE_ESP8266WIFI
+#ifdef HAVE_ESPWIFI
     wl_status_t wifistatus;
     if ((millis() - m_lastact) >= 3000 && (
                 (wifistatus = WiFi.status()) != WL_CONNECTED || wifistatus != m_wifistatus)) {
@@ -78,7 +78,7 @@ void NetworkComponent::push_remote(String topic, String formdata)
 #endif
 }
 
-#ifdef HAVE_ESP8266WIFI
+#ifdef HAVE_ESPWIFI
 void NetworkComponent::handle_wifi_state_change(wl_status_t wifistatus)
 {
     // FIXME: translate wifistatus from number to something readable
@@ -166,7 +166,7 @@ void NetworkComponent::sample()
 String NetworkComponent::fetch_remote()
 {
     String payload;
-#ifdef HAVE_ESP8266HTTPCLIENT
+#ifdef HAVE_HTTPCLIENT
     HTTPClient http;
     http.begin(m_httpbackend, SECRET_HUD_URL);
     int http_code = http.GET();

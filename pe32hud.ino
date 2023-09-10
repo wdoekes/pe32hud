@@ -67,6 +67,32 @@ int main(int argc, char** argv);
 
 
 ////////////////////////////////////////////////////////////////////////
+// INTERFACES (and implementations...?)
+//
+class StatusLed {
+public:
+  virtual void toggle(bool on) = 0;
+};
+
+class GpioLed : public StatusLed {
+private:
+  uint8_t const m_pin;
+  int8_t const m_off;
+  int8_t const m_on;
+public:
+  GpioLed(uint8_t pin, int8_t off, int8_t on)
+    : m_pin(pin), m_off(off), m_on(on) {
+    pinMode(m_pin, OUTPUT);
+    digitalWrite(m_pin, m_off);
+  }
+  virtual void toggle(bool on) { digitalWrite(m_pin, on ? m_on : m_off); }
+};
+
+GpioLed redLed(LED_RED, LED_OFF, LED_ON);
+GpioLed blueLed(LED_BLUE, LED_OFF, LED_ON);
+
+
+////////////////////////////////////////////////////////////////////////
 // GLOBALS
 //
 
@@ -74,7 +100,8 @@ Device Device;  // the one and only Device
 
 AirQualitySensorComponent airQualitySensorComponent(PIN_SDA, PIN_SCL, CCS811_RST);
 DisplayComponent displayComponent(PIN_SDA, PIN_SCL);
-LedStatusComponent ledStatusComponent(LED_RED, LED_BLUE);
+LedStatusComponent ledStatusComponent(
+  [](bool on){ redLed.toggle(on); }, [](bool on){ blueLed.toggle(on); });
 // FIXME: pass passphrase here..
 NetworkComponent networkComponent;
 SunscreenComponent sunscreenComponent(SOMFY_SEL, SOMFY_DN, SOMFY_UP);

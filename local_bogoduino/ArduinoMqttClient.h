@@ -1,7 +1,7 @@
 #ifndef INCLUDED_LOCAL_BOGODUINO_ARDUINOMQTTCLIENT_H
 #define INCLUDED_LOCAL_BOGODUINO_ARDUINOMQTTCLIENT_H
 
-#include <ESP8266WiFi.h>
+/* This requires WiFi includes. But they are handled elsewhere, we hope. */
 
 struct MqttClient {
     MqttClient(WiFiClient& wifi_client) {}

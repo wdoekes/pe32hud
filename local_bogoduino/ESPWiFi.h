@@ -1,5 +1,5 @@
-#ifndef INCLUDED_LOCAL_BOGODUINO_ESP8622WIFI_H
-#define INCLUDED_LOCAL_BOGODUINO_ESP8622WIFI_H
+#ifndef INCLUDED_LOCAL_BOGODUINO_ESPWIFI_H
+#define INCLUDED_LOCAL_BOGODUINO_ESPWIFI_H
 
 #include <Serial.h>
 
@@ -27,14 +27,18 @@ struct WiFiClient {
     void persistent(bool value) {}
     void setAutoReconnect(bool value) {}
 
-    void begin(const String &ssid, const String &password) {}
+    void begin(const String &ssid, const String &password, int32_t channel = 0, const uint8_t* bssid = NULL, bool connect = true) {}
     void disconnect(bool val1, bool val2) {}
     uint8_t waitForConnectResult(unsigned long delay = 60000) { return WL_CONNECTED; }
     char const* macAddress() const { return "11:22:33:44:55:66"; }
+    unsigned char const* const BSSID() const {
+	static unsigned char const buf[6] = {0xc0, 0xff, 0xee, 0xc0, 0xff, 0xee};
+	return buf; }
+    int32_t RSSI() { return -64; }
 
     void printDiag(Print &p) {}
 };
 
 extern WiFiClient WiFi;
 
-#endif //INCLUDED_LOCAL_BOGODUINO_ESP8622WIFI_H
+#endif //INCLUDED_LOCAL_BOGODUINO_ESPWIFI_H

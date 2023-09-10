@@ -5,17 +5,23 @@
 #include <Wire.h>	// Wire
 
 /* Include files specific to the platform (ESP8266, Arduino or TEST) */
-#if defined(ARDUINO_ARCH_ESP8266)
-#define HAVE_ESP8266HTTPCLIENT
-#define HAVE_ESP8266WIFI
+#if defined(ARDUINO_ARCH_ESP32)
+#define HAVE_HTTPCLIENT
+#define HAVE_ESPWIFI
+#include <WiFi.h>
+#include <HTTPClient.h>
+#include <ArduinoMqttClient.h>
+#elif defined(ARDUINO_ARCH_ESP8266)
+#define HAVE_HTTPCLIENT
+#define HAVE_ESPWIFI
 #include <ESP8266WiFi.h>
 #include <ESP8266HTTPClient.h>
 #include <ArduinoMqttClient.h>
 #elif defined(ARDUINO_ARCH_AVR)
 /* nothing yet */
 #elif defined(TEST_BUILD)
-#define HAVE_ESP8266WIFI
-#include <ESP8266WiFi.h>
+#define HAVE_ESPWIFI
+#include <ESPWiFi.h>
 #include <ArduinoMqttClient.h>
 #endif
 
