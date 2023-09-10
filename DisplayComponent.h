@@ -23,7 +23,7 @@ public:
     void setup();
     void loop();
 
-    void set_text(String msg0, String msg1, unsigned long color);
+    void set_text(String msg0, String msg1, uint32_t color);
 
 private:
     void show();

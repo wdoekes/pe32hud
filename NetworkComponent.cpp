@@ -66,8 +66,8 @@ void NetworkComponent::push_remote(String topic, String formdata)
 {
 #if 1
     if (m_mqttclient.connected()) {
-        Serial << F("NetworkComponent: push: ") << topic << F(" :: ")
-            << F("device_id=") << Device.get_guid() << F("&") << formdata << F("\r\n");
+        Serial << F("NetworkComponent: push: ") << topic << F(" :: ") <<  // (idefix)
+            F("device_id=") << Device.get_guid() << F("&") << formdata << F("\r\n");
         m_mqttclient.beginMessage(topic);
         m_mqttclient.print(F("device_id="));
         m_mqttclient.print(Device.get_guid());
@@ -144,8 +144,9 @@ void NetworkComponent::ensure_mqtt()
         if (m_mqttclient.connect(SECRET_MQTT_BROKER, SECRET_MQTT_PORT)) {
             Serial << F("NetworkComponent: MQTT connected to " SECRET_MQTT_BROKER "\r\n");
         } else {
-            Serial << F("NetworkComponent: MQTT connection to " SECRET_MQTT_BROKER " failed: ")
-                << m_mqttclient.connectError() << F("\r\n");
+            Serial << F("NetworkComponent: MQTT connection to "
+                SECRET_MQTT_BROKER " failed: ") <<  // (idefix)
+                m_mqttclient.connectError() << F("\r\n");
         }
     }
 }

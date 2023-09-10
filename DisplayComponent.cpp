@@ -8,7 +8,7 @@ extern Device Device;
 
 class rgb_lcd_plus : public rgb_lcd {
 public:
-  inline void setColor(long color) {
+  inline void setColor(uint32_t color) {
     setRGB(
       (color & 0xff0000) >> 16,
       (color & 0x00ff00) >> 8,
@@ -43,7 +43,7 @@ void DisplayComponent::loop()
     }
 }
 
-void DisplayComponent::set_text(String msg0, String msg1, unsigned long color)
+void DisplayComponent::set_text(String msg0, String msg1, uint32_t color)
 {
     m_message0 = msg0;
     m_message1 = msg1;
