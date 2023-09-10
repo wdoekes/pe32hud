@@ -36,4 +36,16 @@ template<class T> inline Print &operator<<(Print &obj, T arg) {
   return obj;
 };
 
+class BinToggle {
+public:
+  virtual void toggle(bool on) = 0;
+};
+
+class NullToggleType : public BinToggle {
+public:
+  virtual void toggle(bool) {};
+};
+
+extern NullToggleType NullToggle;
+
 #endif  //INCLUDED_PE32HUD_H

@@ -67,20 +67,16 @@ int main(int argc, char** argv);
 
 
 ////////////////////////////////////////////////////////////////////////
-// INTERFACES (and implementations...?)
+// HARDWARE
 //
-class StatusLed {
-public:
-  virtual void toggle(bool on) = 0;
-};
 
-class GpioLed : public StatusLed {
-private:
+class Gpio : public BinToggle {
+protected:
   uint8_t const m_pin;
   int8_t const m_off;
   int8_t const m_on;
 public:
-  GpioLed(uint8_t pin, int8_t off, int8_t on)
+  Gpio(uint8_t pin, int8_t off, int8_t on)
     : m_pin(pin), m_off(off), m_on(on) {
     pinMode(m_pin, OUTPUT);
     digitalWrite(m_pin, m_off);
@@ -88,8 +84,10 @@ public:
   virtual void toggle(bool on) { digitalWrite(m_pin, on ? m_on : m_off); }
 };
 
-GpioLed redLed(LED_RED, LED_OFF, LED_ON);
-GpioLed blueLed(LED_BLUE, LED_OFF, LED_ON);
+NullToggleType NullToggle;
+Gpio ccs811Reset(CCS811_RST, HIGH, LOW);
+Gpio ledRed(LED_RED, LED_OFF, LED_ON);
+Gpio ledBlue(LED_BLUE, LED_OFF, LED_ON);
 
 
 ////////////////////////////////////////////////////////////////////////
@@ -98,12 +96,11 @@ GpioLed blueLed(LED_BLUE, LED_OFF, LED_ON);
 
 Device Device;  // the one and only Device
 
-AirQualitySensorComponent airQualitySensorComponent(PIN_SDA, PIN_SCL, CCS811_RST);
+AirQualitySensorComponent airQualitySensorComponent(&Wire, ccs811Reset);
 DisplayComponent displayComponent(PIN_SDA, PIN_SCL);
 LedStatusComponent ledStatusComponent(
-  [](bool on){ redLed.toggle(on); }, [](bool on){ blueLed.toggle(on); });
-// FIXME: pass passphrase here..
-NetworkComponent networkComponent;
+  [](bool on){ ledRed.toggle(on); }, [](bool on){ ledBlue.toggle(on); });
+NetworkComponent networkComponent; // FIXME: pass SECRET_* here..?
 SunscreenComponent sunscreenComponent(SOMFY_SEL, SOMFY_DN, SOMFY_UP);
 TemperatureSensorComponent temperatureSensorComponent(PIN_DHT11);
 
@@ -124,16 +121,10 @@ void setup() {
   delay(500);
   Serial << F("Booting...\r\n");
 
-  // FIXME: move to both??
-  // The Wire needs to be configured for SDA/SCL. Both the
-  // AirQualityComponent and the DisplayComponent interface through I2C.
-#ifdef ARDUINO_ARCH_ESP8266
-  Wire.begin(PIN_SDA, PIN_SCL);  // non-standard esp8266 invocation
+#if defined(ARDUINO_ARCH_ESP32) || defined(ARDUINO_ARCH_ESP8266)
+  Wire.begin(PIN_SDA, PIN_SCL);  // non-standard ESP invocation
 #else
-#ifdef ARDUINO_ARCH_ESP32
-  Wire.setPins(PIN_SDA, PIN_SCL);
-#endif
-  Wire.begin();  // standard Arduino invocation
+  Wire.begin();  // fixed I2C pins on the Arduino
 #endif
 
   airQualitySensorComponent.setup();

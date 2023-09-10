@@ -3,7 +3,7 @@
 
 #include "pe32hud.h"
 
-class CCS811;
+class Adafruit_CCS811;
 
 class AirQualitySensorComponent {
 private:
@@ -17,13 +17,12 @@ private:
         STATE_FAILING
     } m_state;
 
-    CCS811* m_ccs811;
-    const uint8_t m_pin_sda;
-    const uint8_t m_pin_scl;
-    const uint8_t m_ccs811_rst;
+    Adafruit_CCS811* m_ccs811;
+    TwoWire* m_wire;
+    BinToggle& m_reset;
 
 public:
-    AirQualitySensorComponent(uint8_t pin_sda, uint8_t pin_scl, uint8_t ccs811_rst);
+    AirQualitySensorComponent(TwoWire* theWire = &Wire, BinToggle& reset = NullToggle);
 
     void setup();
     void loop();
